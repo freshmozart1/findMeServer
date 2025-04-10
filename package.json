@@ -1,0 +1,23 @@
+{
+  "name": "findmeserver",
+  "version": "1.0.0",
+  "description": "This is a simple signaling server that manages WebRTC connections for my \"Find Me\" service.",
+  "homepage": "https://github.com/freshmozart1/findMeServer#readme",
+  "bugs": {
+    "url": "https://github.com/freshmozart1/findMeServer/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/freshmozart1/findMeServer.git"
+  },
+  "license": "ISC",
+  "author": "freshmozart1",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "ws": "^8.18.1"
+  }
+}
