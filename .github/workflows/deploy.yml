@@ -58,7 +58,7 @@ jobs:
           flags: |
             --port=8080
             --allow-unauthenticated
-            --service-account="findme-cloudrun-runtime@findme-456516.iam.gserviceaccount.com"
+            --service-account="findme-cloudrun-runtime@${{ env.PROJECT_ID }}.iam.gserviceaccount.com"
 
       - name: Print Cloud Run Service URL
         run: |
