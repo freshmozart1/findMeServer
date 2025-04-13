@@ -33,4 +33,5 @@
 LICENSE
 README.md
 
-*.secret.json
+firebase.secret.json
+github-actions-key.json
