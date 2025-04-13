@@ -27,7 +27,11 @@
                         "containerPort": 8080,
                         "hostPort": 8080
                     }
-                ]
+                ],
+                "env": {
+                    "GOOGLE_APPLICATION_CREDENTIALS": "/run/secrets/firebase.secret.json"
+                },
+                "customOptions": "--mount type=bind,source=\"${workspaceFolder}/firebase.secret.json\",target=/run/secrets/firebase.secret.json,readonly"
             },
             "node": {
                 "enableDebugging": true

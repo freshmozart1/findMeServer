@@ -1,10 +1,13 @@
 import { WebSocketServer } from "ws";
+import { initializeApp } from 'firebase-admin/app';
 
+const app = initializeApp();
 const server = new WebSocketServer({ port: 8080 });
 const rooms = {};
 let nextConnectionId = 0;
 let activeConnectionsCount = 0;
 console.log("WebSocket server is running on ws://localhost:8080");
+console.log('Google: ', process.env);
 
 server.on("connection", (ws) => {
     ws.connectionId = nextConnectionId.valueOf();
