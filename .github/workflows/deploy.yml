@@ -17,48 +17,53 @@ jobs:
     name: Build and Deploy
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
-      id-token: 'write'
+      contents: "read"
+      id-token: "write"
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-    - name: Configure Docker for Artifact Registry
-      run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY_REGION}}-docker.pkg.dev
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY_REGION}}-docker.pkg.dev
 
-    - name: Build Docker image
-      run: docker build -t ${{ env.IMAGE_PATH }}:${{ github.sha }} -t ${{ env.IMAGE_PATH }}:latest .
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE_PATH }}:${{ github.sha }} -t ${{ env.IMAGE_PATH }}:latest .
 
-    - name: Push Docker image to Artifact Registry
-      run: |
-        docker push ${{ env.IMAGE_PATH }}:${{ github.sha }}
-        docker push ${{ env.IMAGE_PATH }}:latest
-        
-    - name: Deploy to Cloud Run
-      uses: google-github-actions/deploy-cloudrun@v2
-      with:
-        service: ${{ env.SERVICE_NAME }}
-        region: ${{ env.RUN_REGION }}
-        image: ${{ env.IMAGE_PATH }}.${{ github.sha }}
-        port: 8080
-        allow_unauthenticated: true
-        service_account: 'findme-cloudrun-runtime@findme-456516.iam.gserviceaccount.com'
-        secrets: |
-          GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase.secret.json=${{ env.FIREBASE_SECRET_NAME }}:latest
+      - name: Push Docker image to Artifact Registry
+        run: |
+          docker push ${{ env.IMAGE_PATH }}:${{ github.sha }}
+          docker push ${{ env.IMAGE_PATH }}:latest
 
-    - name: Print Cloud Run Service URL
-      run: |
-        echo "Waiting for deployment to stabilize..."
-        sleep 10
-        SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --platform managed --region ${{ env.RUN_REGION }} --format 'value(status.url)')
-        echo "Service deployed successfully!"
-        echo "URL: ${SERVICE_URL}"
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.RUN_REGION }}
+          image: ${{ env.IMAGE_PATH }}:${{ github.sha }}
+          secrets: |
+            /etc/secrets/firebase.secret.json=${{ env.FIREBASE_SECRET_NAME }}:latest
+          env_vars: |
+            GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase.secret.json
+          labels: |
+            managed-by=github-actions,commit-sha=${{ github.sha }}
+          flags: |
+            --port=8080
+            --allow-unauthenticated
+            --service-account="findme-cloudrun-runtime@findme-456516.iam.gserviceaccount.com"
+
+      - name: Print Cloud Run Service URL
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 10
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --platform managed --region ${{ env.RUN_REGION }} --format 'value(status.url)')
+          echo "Service deployed successfully!"
+          echo "URL: ${SERVICE_URL}"
