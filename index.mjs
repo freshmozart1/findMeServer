@@ -11,7 +11,7 @@ console.log("WebSocket server is running on ws://localhost:8080");
 let app;
 try {
     if (process.env.NODE_ENV === 'development') {
-        process.env.FIREBASE_CONFIG = fs.readFileSync('./firebase.secret.json', 'utf8');
+        process.env.FIREBASE_CONFIG = JSON.parse(fs.readFileSync('./firebase.secret.json', 'utf8'));
     } else {
         process.env.FIREBASE_CONFIG = {
             apiKey: process.env.FIREBASE_API_KEY,
@@ -22,7 +22,7 @@ try {
             appId: process.env.FIREBASE_APP_ID
         }
     }
-    app = initializeApp(JSON.parse(process.env.FIREBASE_CONFIG));
+    app = initializeApp(process.env.FIREBASE_CONFIG);
 } catch (error) {
     console.error("Error initializing Firebase Admin SDK:", error);
     process.exit(1);

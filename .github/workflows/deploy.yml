@@ -52,9 +52,9 @@ jobs:
           image: ${{ env.IMAGE_PATH }}:${{ github.sha }}
           env_vars: |
             FIREBASE_API_KEY=${{ secrets.GCP_FIREBASE_API_KEY }}
-            FIREBASE_AUTH_DOMAIN=${{ secrets.GCP_PROJECT_ID }}.firebaseapp.com
-            FIREBASE_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
-            FIREBASE_STORAGE_BUCKET=${{ secrets.GCP_PROJECT_ID }}.firebasestorage.app
+            FIREBASE_AUTH_DOMAIN=${{ secrets.GCP_FIREBASE_PROJECT_ID }}.firebaseapp.com
+            FIREBASE_PROJECT_ID=${{ secrets.GCP_FIREBASE_PROJECT_ID }}
+            FIREBASE_STORAGE_BUCKET=${{ secrets.GCP_FIREBASE_PROJECT_ID }}.firebasestorage.app
             FIREBASE_MESSAGING_SENDER_ID=${{ secrets.GCP_FIREBASE_MESSAGING_SENDER_ID }}
             FIREBASE_APP_ID=${{ secrets.GCP_FIREBASE_APP_ID }}
           labels: |
