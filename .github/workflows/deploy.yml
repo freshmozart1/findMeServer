@@ -50,9 +50,9 @@ jobs:
           region: ${{ env.RUN_REGION }}
           image: ${{ env.IMAGE_PATH }}:${{ github.sha }}
           secrets: |
-            /etc/secrets/firebase.secret.json=${{ env.FIREBASE_SECRET_NAME }}:latest
+            /etc/secrets/firebase=${{ env.FIREBASE_SECRET_NAME }}:latest
           env_vars: |
-            GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase.secret.json
+            GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase
           labels: |
             managed-by=github-actions,commit-sha=${{ github.sha }}
           flags: |
