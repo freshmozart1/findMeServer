@@ -28,10 +28,7 @@
                         "hostPort": 8080
                     }
                 ],
-                "env": {
-                    "GOOGLE_APPLICATION_CREDENTIALS": "/etc/secrets/firebase"
-                },
-                "customOptions": "--mount type=bind,source=\"${workspaceFolder}/firebase.secret.json\",target=/etc/secrets/firebase,readonly"
+                "customOptions": "--mount type=bind,source=\"${workspaceFolder}/firebase.secret.json\",target=/usr/src/app/firebase.secret.json,readonly"
             },
             "node": {
                 "enableDebugging": true

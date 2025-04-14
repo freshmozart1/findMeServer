@@ -1,13 +1,23 @@
 import { WebSocketServer } from "ws";
-import { initializeApp } from 'firebase-admin/app';
+import { initializeApp, cert } from 'firebase-admin/app';
+import fs from 'fs';
 
-const app = initializeApp();
 const server = new WebSocketServer({ port: 8080 });
 const rooms = {};
 let nextConnectionId = 0;
 let activeConnectionsCount = 0;
 console.log("WebSocket server is running on ws://localhost:8080");
-console.log('Google: ', process.env);
+
+let app;
+try {
+    if (process.env.NODE_ENV === 'development') {
+        process.env.FIREBASE_CONFIG = fs.readFileSync('./firebase.secret.json', 'utf8');
+    }
+    app = initializeApp(JSON.parse(process.env.FIREBASE_CONFIG));
+} catch (error) {
+    console.error("Error initializing Firebase Admin SDK:", error);
+    process.exit(1);
+}
 
 server.on("connection", (ws) => {
     ws.connectionId = nextConnectionId.valueOf();

@@ -9,7 +9,6 @@ env:
   ARTIFACT_REGISTRY_REPO: ${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}
   SERVICE_NAME: ${{ secrets.GCP_CLOUD_RUN_SERVICE_NAME }}
   RUN_REGION: ${{ secrets.GCP_CLOUD_RUN_REGION }}
-  FIREBASE_SECRET_NAME: ${{ secrets.GCP_FIREBASE_SECRET_NAME }}
   IMAGE_PATH: ${{ secrets.GCP_ARTIFACT_REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}/${{ secrets.GCP_CLOUD_RUN_SERVICE_NAME }}
 
 jobs:
@@ -49,10 +48,8 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.RUN_REGION }}
           image: ${{ env.IMAGE_PATH }}:${{ github.sha }}
-          secrets: |
-            /etc/secrets/firebase=${{ env.FIREBASE_SECRET_NAME }}:latest
           env_vars: |
-            GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase
+            FIREBASE_CONFIG=${{ secrets.GCP_FIREBASE_CONFIG }}
           labels: |
             managed-by=github-actions,commit-sha=${{ github.sha }}
           flags: |
