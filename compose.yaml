@@ -1,9 +1,0 @@
-services:
-  server:
-    build:
-      context: .
-      target: dev
-    image: findmeserver-dev:latest
-    ports:
-      - 8080:8080
-      - 9229:9229

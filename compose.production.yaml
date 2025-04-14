@@ -1,5 +1,0 @@
-services:
-  server:
-    build:
-      target: prod
-    image: findmeserver-prod:latest
