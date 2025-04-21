@@ -7,6 +7,16 @@
             "preLaunchTask": "docker-run: debug",
             "platform": "node",
             "removeContainerAfterDebug": true
+        },
+        {
+            "name": "Node.js Launch",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/index.mjs",
+            "runtimeExecutable": "node",
+            "env": {
+                "NODE_ENV": "development"
+            }
         }
     ]
 }
