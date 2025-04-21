@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.11.0",
-    "firebase-admin": "^13.2.0",
+    "firebase": "^11.6.0",
     "ws": "^8.18.1"
   }
 }
