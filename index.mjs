@@ -45,7 +45,6 @@ async function joinRoom(ws, { lat, lng }) {
     if (!db) throw new Error("Firebase not initialized");
     try {
         const time = new Date();
-        // await setDoc(doc(db, ws.roomId, ws.id), { createdAt: time });
         const memberRef = await addDoc(collection(db, ws.roomId), { createdAt: time });
         ws.id = memberRef.id;
         return await addDoc(collection(db, ws.roomId, ws.id, 'locations'), { lat, lng, createdAt: time });
