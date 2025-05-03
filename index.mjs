@@ -103,7 +103,8 @@ async function receivedMessage(ws, message) {
             }));
         }
     } catch (error) {
-        sendMessage(ws, 'error', { data: { message: error.message } });
+        ws.close(1011, error.message ?? error);
+        console.error("Error processing message:", error);
     }
 }
 
