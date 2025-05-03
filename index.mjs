@@ -41,13 +41,14 @@ async function getRoomIfExists(roomId) {
     }
 }
 
-async function joinRoom(ws, { lat, lng }) {
+async function joinRoom(ws, { lat, lng }, joinMessage = 'joinedRoom') {
     if (!db) throw new Error("Firebase not initialized");
     try {
         const time = new Date();
         const memberRef = await addDoc(collection(db, ws.roomId), { createdAt: time });
         ws.id = memberRef.id;
-        return await addDoc(collection(db, ws.roomId, ws.id, 'locations'), { lat, lng, createdAt: time });
+        await addDoc(collection(db, ws.roomId, ws.id, 'locations'), { lat, lng, createdAt: time });
+        sendMessage(ws, joinMessage, { roomId: ws.roomId, memberId: ws.id });
     } catch (error) {
         console.error("Error creating collection:", error);
         throw error;
@@ -83,8 +84,7 @@ async function receivedMessage(ws, message) {
         if ((messageType === 'new' || messageType === 'join') && (typeof lat !== 'number' || typeof lng !== 'number')) throw "Latitude and Longitude must be numbers";
         if (messageType === 'new') {
             do { ws.roomId = generateRoomId(); } while (await getRoomIfExists(ws.roomId));
-            await joinRoom(ws, { lat, lng });
-            sendMessage(ws, 'room', { id: ws.roomId });
+            await joinRoom(ws, { lat, lng }, 'createdRoom');
         } else if (messageType === 'join') {
             if (!roomId) throw "Room ID is required";
             const room = await getRoomIfExists(roomId);
