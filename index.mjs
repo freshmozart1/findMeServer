@@ -48,7 +48,7 @@ async function joinRoom(ws, { lat, lng }, joinMessage = 'joinedRoom') {
         const memberRef = await addDoc(collection(db, ws.roomId), { createdAt: time });
         ws.id = memberRef.id;
         await addDoc(collection(db, ws.roomId, ws.id, 'locations'), { lat, lng, createdAt: time });
-        sendMessage(ws, joinMessage, { roomId: ws.roomId, memberId: ws.id });
+        sendMessage(ws, joinMessage);
     } catch (error) {
         console.error("Error creating collection:", error);
         throw error;
@@ -66,11 +66,15 @@ function generateRoomId() {
 }
 
 function addLocationSnapshot(ws, memberId) {
-    ws.locationSnapshots.push(onSnapshot(collection(db, ws.roomId, memberId, 'locations'), locSnap => locSnap.docChanges().forEach(({ type, doc }) => type === 'added' && sendMessage(ws, 'location', { id: memberId, ...doc.data() }))));
+    ws.locationSnapshots.push(onSnapshot(collection(db, ws.roomId, memberId, 'locations'), locSnap => locSnap.docChanges().forEach(({ type, doc }) => type === 'added' && sendMessage(ws, 'location', { data: doc.data(), memberId }))));
 }
 
-function sendMessage(ws, type, data = undefined) {
-    ws.send(JSON.stringify(data ? { type, ...data } : { type }));
+function sendMessage(ws, type, { data = undefined, memberId = ws.id } = {}) {
+    const message = { type };
+    if (ws.roomId !== undefined) message.roomId = ws.roomId;
+    if (memberId !== undefined) message.memberId = memberId;
+    if (data) Object.assign(message, data);
+    ws.send(JSON.stringify(message));
 }
 
 async function receivedMessage(ws, message) {
@@ -95,11 +99,11 @@ async function receivedMessage(ws, message) {
         if (messageType === 'new' || messageType === 'join') {
             ws.roomSnapshot = onSnapshot(collection(db, ws.roomId), snap => snap.docChanges().forEach(({ type, doc: { id } }) => {
                 type === 'added' && id !== ws.id && addLocationSnapshot(ws, id);
-                type === 'removed' && sendMessage(ws, 'leave', { id });
+                type === 'removed' && sendMessage(ws, 'leave', { memberId: id });
             }));
         }
     } catch (error) {
-        sendMessage(ws, 'error', { message: error.message || error });
+        sendMessage(ws, 'error', { data: { message: error.message } });
     }
 }
 
