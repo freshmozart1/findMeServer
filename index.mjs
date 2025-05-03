@@ -85,7 +85,11 @@ async function receivedMessage(ws, message) {
             checkAlive(ws);
             return;
         };
-        if ((messageType === 'new' || messageType === 'join') && (typeof lat !== 'number' || typeof lng !== 'number')) throw "Latitude and Longitude must be numbers";
+        if (messageType === 'new' || messageType === 'join') {
+            if (typeof lat !== 'number' || typeof lng !== 'number') throw "Latitude and Longitude must be numbers";
+            if (lat < -90 || lat > 90) throw "Latitude must be between -90 and 90";
+            if (lng < -180 || lng > 180) throw "Longitude must be between -180 and 180";
+        }
         if (messageType === 'new') {
             do { ws.roomId = generateRoomId(); } while (await getRoomIfExists(ws.roomId));
             await joinRoom(ws, { lat, lng }, 'createdRoom');
