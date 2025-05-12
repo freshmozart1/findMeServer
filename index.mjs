@@ -41,22 +41,8 @@ async function getRoomIfExists(roomId) {
     }
 }
 
-async function joinRoom(ws, { lat, lng }, joinMessage = 'joinedRoom') {
-    if (!db) throw new Error("Firebase not initialized");
-    try {
-        const time = new Date();
-        const memberRef = await addDoc(collection(db, ws.roomId), { createdAt: time });
-        ws.id = memberRef.id;
-        await addDoc(collection(db, ws.roomId, ws.id, 'locations'), { lat, lng, createdAt: time });
-        sendMessage(ws, joinMessage);
-    } catch (error) {
-        console.error("Error creating collection:", error);
-        throw error;
-    }
-}
-
 function checkAlive(ws) {
-    sendMessage(ws, 'pong');
+    ws.send(JSON.stringify({ type: 'ping' }));
     clearTimeout(ws.heartbeatTimeout);
     ws.heartbeatTimeout = setTimeout(() => ws.terminate(), 30000);
 }
@@ -65,46 +51,100 @@ function generateRoomId() {
     return Array.from({ length: 4 }, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 62)]).join('');
 }
 
-function addLocationSnapshot(ws, memberId) {
-    ws.locationSnapshots.push(onSnapshot(collection(db, ws.roomId, memberId, 'locations'), locSnap => locSnap.docChanges().forEach(({ type, doc }) => type === 'added' && sendMessage(ws, 'location', { data: doc.data(), memberId }))));
+function validGeoLocation(lat, lng) {
+    if (typeof lat !== 'number' || typeof lng !== 'number') throw new Error("Latitude and Longitude must be numbers");
+    if (lat < -90 || lat > 90) throw new Error("Latitude must be between -90 and 90");
+    if (lng < -180 || lng > 180) throw new Error("Longitude must be between -180 and 180");
+    return true;
 }
 
-function sendMessage(ws, type, { data = undefined, memberId = ws.id } = {}) {
-    const message = { type };
-    if (ws.roomId !== undefined) message.roomId = ws.roomId;
-    if (memberId !== undefined) message.memberId = memberId;
-    if (data) Object.assign(message, data);
-    ws.send(JSON.stringify(message));
+async function createRoom(ws, lat, lng, time) {
+    if (!db) throw new Error("Firebase not initialized");
+    if (ws.roomId) throw new Error("Already in a room");
+    if (!lat || !lng) throw new Error("Latitude and Longitude are required");
+    if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
+    if (!time) throw new Error("Time is required");
+    do { ws.roomId = generateRoomId(); } while (await getRoomIfExists(ws.roomId));
+    await joinRoom(ws, lat, lng, time);
+    ws.send(JSON.stringify({
+        type: 'created',
+        roomId: ws.roomId,
+        userId: ws.id
+    }));
+}
+
+function subscribeToLocation(ws, userId) {
+    if (ws.id === userId) throw new Error("Cannot subscribe to own location");
+    const unsubscribe = onSnapshot(getLocationCollection(ws.roomId, userId), locSnap => {
+        locSnap.docChanges().forEach(({ type, doc }) => {
+            if (type === 'added') {
+                const { lat: changedLat, lng: changedLng, time: changedTime } = doc.data();
+                ws.send(JSON.stringify({
+                    type: 'location',
+                    roomId: ws.roomId,
+                    userId,
+                    lat: changedLat,
+                    lng: changedLng,
+                    time: changedTime
+                }));
+            }
+        })
+    });
+    ws.locationSnapshots.push({
+        userId,
+        unsubscribe
+    });
+}
+
+function unsubscribeFromLocation(ws, userId, index = undefined) {
+    if (!ws) throw new Error("WebSocket is required to unsubscribe from location");
+    if (!userId) throw new Error("User ID is required to unsubscribe from location");
+    if (!ws.locationSnapshots) throw new Error("Location snapshots are not initialized");
+    if (!ws.id) throw new Error("WebSocket is not a member of a room");
+    if (ws.id === userId) throw new Error("Cannot unsubscribe from own location");
+    if (index === undefined || index === null) index = ws.locationSnapshots.findIndex(({ userId: _userId }) => _userId === userId);
+    if (index >= 0 && index < ws.locationSnapshots.length) {
+        ws.locationSnapshots[index].unsubscribe();
+        ws.locationSnapshots.splice(index, 1);
+    }
+}
+
+function getLocationCollection(roomId, userId) {
+    if (!roomId) throw new Error("Room id is required");
+    if (!userId) throw new Error("User id is required");
+    return collection(db, roomId, userId, 'locations');
+}
+
+async function joinRoom(ws, lat, lng, time) {
+    if (!db) throw new Error("Firebase not initialized");
+    if (!ws.roomId) throw new Error("Room ID is required");
+    if (!lat || !lng) throw new Error("Latitude and Longitude are required");
+    if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
+    if (!time) throw new Error("Time is required");
+    const roomRef = collection(db, ws.roomId);
+    ws.id = (await addDoc(roomRef, { joinedAt: time })).id;
+    ws.roomSnapshot = onSnapshot(roomRef, snap => snap.docChanges().forEach(({ type, doc: userDoc }) => {
+        if (type === 'added' && userDoc.id !== ws.id) subscribeToLocation(ws, userDoc.id);
+        if (type === 'removed') unsubscribeFromLocation(ws, userDoc.id);
+    }));
+    await addDoc(getLocationCollection(ws.roomId, ws.id), { lat, lng, time });
 }
 
 async function receivedMessage(ws, message) {
     try {
-        const { type: messageType, lat, lng, roomId } = JSON.parse(message);
-        if (!messageType) throw "Message type is required";
-        if (messageType === 'ping') {
-            checkAlive(ws);
-            return;
-        };
-        if (messageType === 'new' || messageType === 'join') {
-            if (typeof lat !== 'number' || typeof lng !== 'number') throw "Latitude and Longitude must be numbers";
-            if (lat < -90 || lat > 90) throw "Latitude must be between -90 and 90";
-            if (lng < -180 || lng > 180) throw "Longitude must be between -180 and 180";
-        }
-        if (messageType === 'new') {
-            do { ws.roomId = generateRoomId(); } while (await getRoomIfExists(ws.roomId));
-            await joinRoom(ws, { lat, lng }, 'createdRoom');
-        } else if (messageType === 'join') {
-            if (!roomId) throw "Room ID is required";
-            const room = await getRoomIfExists(roomId);
-            if (!room) throw "Room not found";
-            ws.roomId = roomId;
-            await joinRoom(ws, { lat, lng });
-        } else throw "Invalid message type";
-        if (messageType === 'new' || messageType === 'join') {
-            ws.roomSnapshot = onSnapshot(collection(db, ws.roomId), snap => snap.docChanges().forEach(({ type, doc: { id } }) => {
-                type === 'added' && id !== ws.id && addLocationSnapshot(ws, id);
-                type === 'removed' && sendMessage(ws, 'leave', { memberId: id });
-            }));
+        const { type: messageType, lat, lng, roomId, time } = JSON.parse(message);
+        if (!messageType) throw new Error("Message type is required");
+        switch (messageType) {
+            case 'pong': return checkAlive(ws);
+            case 'create':
+                await createRoom(ws, lat, lng, time);
+                break;
+            case 'join':
+                ws.roomId = roomId;
+                await joinRoom(ws, lat, lng, time);
+                break;
+            default:
+                throw new Error("Invalid message type");
         }
     } catch (error) {
         ws.close(1011, error.message ?? error);
@@ -114,7 +154,7 @@ async function receivedMessage(ws, message) {
 
 server.on("connection", (ws) => {
     Object.assign(ws, { roomId: undefined, id: undefined, roomSnapshot: undefined, locationSnapshots: [], heartbeatTimeout: undefined });
-    checkAlive(ws);
+    // checkAlive(ws);
     ws.on('message', (message) => receivedMessage(ws, message));
     ws.on('close', async () => {
         if (ws.roomId) {
