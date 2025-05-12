@@ -96,17 +96,17 @@ function subscribeToLocation(ws, userId) {
     });
 }
 
-function unsubscribeFromLocation(ws, userId, index = undefined) {
+function unsubscribeFromLocation(ws, userId = undefined, index = undefined) {
     if (!ws) throw new Error("WebSocket is required to unsubscribe from location");
-    if (!userId) throw new Error("User ID is required to unsubscribe from location");
     if (!ws.locationSnapshots) throw new Error("Location snapshots are not initialized");
     if (!ws.id) throw new Error("WebSocket is not a member of a room");
-    if (ws.id === userId) throw new Error("Cannot unsubscribe from own location");
-    if (index === undefined || index === null) index = ws.locationSnapshots.findIndex(({ userId: _userId }) => _userId === userId);
-    if (index >= 0 && index < ws.locationSnapshots.length) {
-        ws.locationSnapshots[index].unsubscribe();
-        ws.locationSnapshots.splice(index, 1);
-    }
+    if (index === undefined || index === null) {
+        if (!userId) throw new Error("User ID is required to unsubscribe from location when index is not provided");
+        if (ws.id === userId) throw new Error("Cannot unsubscribe from own location");
+        index = ws.locationSnapshots.findIndex(({ userId: _userId }) => _userId === userId);
+    } else if (typeof index !== 'number' || index < 0 || index >= ws.locationSnapshots.length) return;
+    ws.locationSnapshots[index].unsubscribe();
+    ws.locationSnapshots.splice(index, 1);
 }
 
 function getLocationCollection(roomId, userId) {
@@ -125,9 +125,30 @@ async function joinRoom(ws, lat, lng, time) {
     ws.id = (await addDoc(roomRef, { joinedAt: time })).id;
     ws.roomSnapshot = onSnapshot(roomRef, snap => snap.docChanges().forEach(({ type, doc: userDoc }) => {
         if (type === 'added' && userDoc.id !== ws.id) subscribeToLocation(ws, userDoc.id);
-        if (type === 'removed') unsubscribeFromLocation(ws, userDoc.id);
+        else if (type === 'removed') {
+            if (userDoc.id !== ws.id) unsubscribeFromLocation(ws, userDoc.id);
+            ws.send(JSON.stringify({
+                type: 'left',
+                userID: userDoc.id
+            }));
+        }
     }));
     await addDoc(getLocationCollection(ws.roomId, ws.id), { lat, lng, time });
+}
+
+async function leaveRoom(ws) {
+    if (!db) throw new Error("Firebase not initialized");
+    if (!ws.roomId) throw new Error("Room ID is required");
+    if (!ws.id) throw new Error("User ID is required");
+    if (!ws.roomSnapshot) throw new Error("Room snapshot is not initialized");
+    const memberRef = doc(db, ws.roomId, ws.id);
+    await Promise.all([...(await getDocs(query(collection(memberRef, 'locations')))).docs.map(docSnap => deleteDoc(docSnap.ref)), deleteDoc(memberRef)]);
+    ws.locationSnapshots.forEach((snap, index) => snap.unsubscribe(ws, undefined, index));
+    ws.locationSnapshots = [];
+    ws.roomSnapshot && ws.roomSnapshot();
+    ws.roomId = undefined;
+    ws.id = undefined;
+    ws.roomSnapshot = undefined;
 }
 
 async function receivedMessage(ws, message) {
@@ -142,6 +163,9 @@ async function receivedMessage(ws, message) {
             case 'join':
                 ws.roomId = roomId;
                 await joinRoom(ws, lat, lng, time);
+                break;
+            case 'leave':
+                await leaveRoom(ws);
                 break;
             default:
                 throw new Error("Invalid message type");
@@ -161,7 +185,7 @@ server.on("connection", (ws) => {
             const memberRef = doc(db, ws.roomId, ws.id);
             await Promise.all([...(await getDocs(query(collection(memberRef, 'locations')))).docs.map(docSnap => deleteDoc(docSnap.ref)), deleteDoc(memberRef)]);
             ws.roomSnapshot && ws.roomSnapshot(); // unsubscribe from room snapshot
-            ws.locationSnapshots.forEach(unsub => unsub()); // unsubscribe from location snapshots
+            ws.locationSnapshots.forEach((snap, index) => snap.unsubscribe(ws, undefined, index)); // unsubscribe from location snapshots
         }
         clearTimeout(ws.heartbeatTimeout); // clear heartbeat timeout on disconnect
     });
