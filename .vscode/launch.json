@@ -12,7 +12,7 @@
             "name": "Node.js Launch",
             "type": "node",
             "request": "launch",
-            "program": "${workspaceFolder}/index.mjs",
+            "program": "${workspaceFolder}/index.js",
             "runtimeExecutable": "node",
             "env": {
                 "NODE_ENV": "development"
