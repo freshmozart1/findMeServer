@@ -1,6 +1,6 @@
 import { WebSocketServer } from "ws";
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, query, getDocs, doc, addDoc, onSnapshot, deleteDoc, updateDoc } from "firebase/firestore";
+import { getFirestore, collection, query, getDocs, doc, addDoc, onSnapshot, deleteDoc, updateDoc, setDoc, getDoc } from "firebase/firestore";
 import fs from 'fs';
 
 const server = new WebSocketServer({ port: 8080 });
@@ -120,6 +120,12 @@ function getLocationCollection(roomId, userId) {
     return collection(db, roomId, userId, 'locations');
 }
 
+async function checkIfMemberExists(roomId, userId) {
+    if (!roomId) throw new Error("Room id is required");
+    if (!userId) throw new Error("User id is required");
+    return (await getDoc(doc(db, roomId, userId))).exists();
+}
+
 async function joinRoom(ws, lat, lng, time) {
     if (!db) throw new Error("Firebase not initialized");
     if (!ws.roomId) throw new Error("Room ID is required");
@@ -127,7 +133,11 @@ async function joinRoom(ws, lat, lng, time) {
     if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
     if (!time) throw new Error("Time is required");
     const roomRef = collection(db, ws.roomId);
-    ws.id = (await addDoc(roomRef, { joinedAt: time, lost: false })).id;
+    if (!ws.id) ws.id = (await addDoc(roomRef, { joinedAt: time, lost: false })).id;
+    else {
+        if (await checkIfMemberExists(ws.roomId, ws.id)) throw new Error("User already exists in the room");
+        await setDoc(doc(db, ws.roomId, ws.id), { joinedAt: time, lost: false });
+    }
     ws.roomSnapshot = onSnapshot(roomRef, snap => snap.docChanges().forEach(change => {
         const type = change.type;
         const userDoc = change.doc;
@@ -167,7 +177,7 @@ async function leaveRoom(ws) {
 
 async function receivedMessage(ws, message) {
     try {
-        const { type: messageType, lat, lng, roomId, time } = JSON.parse(message);
+        const { type: messageType, lat, lng, roomId, userId, time } = JSON.parse(message);
         if (!messageType) throw new Error("Message type is required");
         switch (messageType) {
             case 'pong': return checkAlive(ws);
@@ -176,6 +186,7 @@ async function receivedMessage(ws, message) {
                 break;
             case 'join':
                 ws.roomId = roomId;
+                ws.id = userId;
                 await joinRoom(ws, lat, lng, time);
                 break;
             case 'leave':
@@ -196,7 +207,7 @@ server.on("connection", (ws) => {
     ws.on('message', (message) => receivedMessage(ws, message));
     ws.on('close', async () => {
         console.log('Client disconnected');
-        if (ws.roomId) leaveRoom(ws);
+        //if (ws.roomId) leaveRoom(ws);
         clearTimeout(ws.heartbeatTimeout); // clear heartbeat timeout on disconnect
     });
 });
