@@ -157,7 +157,17 @@ async function joinRoom(ws, lat, lng, time) {
             }));
         }
     }));
-    await addDoc(getLocationCollection(ws.roomId, ws.id), { lat, lng, time });
+    await updateLocation(ws, lat, lng, time);
+}
+
+async function updateLocation(ws, lat, lng, time) {
+    if (!db) throw new Error("Firebase not initialized");
+    if (!ws.roomId) throw new Error("Room ID is required");
+    if (!ws.id) throw new Error("User ID is required");
+    if (!lat || !lng) throw new Error("Latitude and Longitude are required");
+    if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
+    if (!time) throw new Error("Time is required");
+    return await addDoc(getLocationCollection(ws.roomId, ws.id), { lat, lng, time });
 }
 
 async function leaveRoom(ws) {
@@ -192,6 +202,9 @@ async function receivedMessage(ws, message) {
             case 'leave':
                 await leaveRoom(ws);
                 break;
+            case 'location':
+                await updateLocation(ws, lat, lng, time);
+                break;
             default:
                 throw new Error("Invalid message type");
         }
@@ -207,7 +220,7 @@ server.on("connection", (ws) => {
     ws.on('message', (message) => receivedMessage(ws, message));
     ws.on('close', async () => {
         console.log('Client disconnected');
-        //if (ws.roomId) leaveRoom(ws);
-        clearTimeout(ws.heartbeatTimeout); // clear heartbeat timeout on disconnect
+        if (ws.roomId) leaveRoom(ws);
+        clearTimeout(ws.heartbeatTimeout);
     });
 });
