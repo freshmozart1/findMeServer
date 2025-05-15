@@ -1,6 +1,6 @@
 import { WebSocketServer } from "ws";
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, query, getDocs, doc, setDoc, addDoc, serverTimestamp, onSnapshot, deleteDoc } from "firebase/firestore";
+import { getFirestore, collection, query, getDocs, doc, addDoc, onSnapshot, deleteDoc, updateDoc } from "firebase/firestore";
 import fs from 'fs';
 
 const server = new WebSocketServer({ port: 8080 });
@@ -44,7 +44,12 @@ async function getRoomIfExists(roomId) {
 function checkAlive(ws) {
     ws.send(JSON.stringify({ type: 'ping' }));
     clearTimeout(ws.heartbeatTimeout);
-    ws.heartbeatTimeout = setTimeout(() => ws.terminate(), 30000);
+    ws.heartbeatTimeout = setTimeout(async () => {
+        if (ws.roomId) {
+            await updateDoc(doc(db, ws.roomId, ws.id), { lost: true });
+        }
+        ws.terminate();
+    }, 30000);
 }
 
 function generateRoomId() {
@@ -122,14 +127,23 @@ async function joinRoom(ws, lat, lng, time) {
     if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
     if (!time) throw new Error("Time is required");
     const roomRef = collection(db, ws.roomId);
-    ws.id = (await addDoc(roomRef, { joinedAt: time })).id;
-    ws.roomSnapshot = onSnapshot(roomRef, snap => snap.docChanges().forEach(({ type, doc: userDoc }) => {
-        if (type === 'added' && userDoc.id !== ws.id) subscribeToLocation(ws, userDoc.id);
+    ws.id = (await addDoc(roomRef, { joinedAt: time, lost: false })).id;
+    ws.roomSnapshot = onSnapshot(roomRef, snap => snap.docChanges().forEach(change => {
+        const type = change.type;
+        const userDoc = change.doc;
+        const userId = userDoc.id;
+        const lost = userDoc.data().lost;
+        if (type === 'added' && userId !== ws.id) subscribeToLocation(ws, userId);
         else if (type === 'removed') {
-            if (userDoc.id !== ws.id) unsubscribeFromLocation(ws, userDoc.id);
+            if (userId !== ws.id) unsubscribeFromLocation(ws, userId);
             ws.send(JSON.stringify({
                 type: 'left',
-                userID: userDoc.id
+                userID: userId
+            }));
+        } else if ((type === 'modified') && (userId !== ws.id) && lost) {
+            ws.send(JSON.stringify({
+                type: 'lost',
+                userID: userId
             }));
         }
     }));
@@ -178,15 +192,11 @@ async function receivedMessage(ws, message) {
 
 server.on("connection", (ws) => {
     Object.assign(ws, { roomId: undefined, id: undefined, roomSnapshot: undefined, locationSnapshots: [], heartbeatTimeout: undefined });
-    // checkAlive(ws);
+    checkAlive(ws);
     ws.on('message', (message) => receivedMessage(ws, message));
     ws.on('close', async () => {
-        if (ws.roomId) {
-            const memberRef = doc(db, ws.roomId, ws.id);
-            await Promise.all([...(await getDocs(query(collection(memberRef, 'locations')))).docs.map(docSnap => deleteDoc(docSnap.ref)), deleteDoc(memberRef)]);
-            ws.roomSnapshot && ws.roomSnapshot(); // unsubscribe from room snapshot
-            ws.locationSnapshots.forEach((snap, index) => snap.unsubscribe(ws, undefined, index)); // unsubscribe from location snapshots
-        }
+        console.log('Client disconnected');
+        if (ws.roomId) leaveRoom(ws);
         clearTimeout(ws.heartbeatTimeout); // clear heartbeat timeout on disconnect
     });
 });
