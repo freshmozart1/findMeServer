@@ -403,3 +403,4 @@ FodyWeavers.xsd
 *.secret.json
 github-actions-key.json
 .DS_Store
+certificates
