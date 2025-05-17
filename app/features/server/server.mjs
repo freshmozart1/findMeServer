@@ -123,13 +123,14 @@ export async function startServer({
         if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
         if (!time) throw new Error("Time is required");
         const roomRef = collection(db, ws.roomId);
-        const userRef = ws.id ? doc(roomRef, ws.id) : null;
+        const userObject = { joinedAt: time, lost: false };
         if (!ws.id) {
-            ws.id = (await addDoc(roomRef, { joinedAt: time, lost: false })).id;
+            ws.id = (await addDoc(roomRef, userObject)).id;
         } else {
+            const userRef = doc(roomRef, ws.id);
             await ((await getDoc(userRef)).exists()
-                ? updateDoc(userRef, { joinedAt: time, lost: false })
-                : setDoc(userRef, { joinedAt: time, lost: false }));
+                ? updateDoc(userRef, userObject)
+                : setDoc(userRef, userObject));
         }
         ws.roomSnapshot = onSnapshot(roomRef, snap => snap.docChanges().forEach(change => {
             const type = change.type;
