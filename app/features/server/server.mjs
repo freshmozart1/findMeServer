@@ -5,7 +5,7 @@ import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, collection, query, getDocs, doc, addDoc, onSnapshot, deleteDoc, updateDoc, setDoc, getDoc, limit, Firestore, CollectionReference, DocumentReference } from "firebase/firestore";
 
 /**
- * 
+ * The function to start the WebSocket backend of the FindMe web app.
  * @param {object} options An object containing the options for the server
  * @param {object} options.firebaseConfig The Firebase configuration object
  * @param {string} options.databaseId The id of the Firestore database to use
