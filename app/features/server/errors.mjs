@@ -18,3 +18,32 @@ export class NoUserIdError extends Error {
         this.name = "NoUserIdError";
     }
 }
+
+export class LatitudeRequiredError extends Error {
+    constructor() {
+        super("Latitude is required");
+        this.name = "LatitudeRequiredError";
+    }
+}
+
+export class LongitudeRequiredError extends Error {
+    constructor() {
+        super("Longitude is required");
+        this.name = "LongitudeRequiredError";
+    }
+}
+
+export class LatitudeError extends Error {
+    constructor() {
+        super("Latitude is invalid");
+        this.name = "LatitudeError";
+    }
+}
+
+
+export class LongitudeError extends Error {
+    constructor() {
+        super("Longitude is invalid");
+        this.name = "LongitudeError";
+    }
+}

@@ -2,8 +2,32 @@ import { WebSocketServer } from "ws";
 import { Server as SecureServer } from 'https';
 import { Server } from "http";
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getFirestore, collection, query, getDocs, doc, addDoc, onSnapshot, deleteDoc, updateDoc, setDoc, getDoc, limit, Firestore, CollectionReference, DocumentReference } from "firebase/firestore";
-import { DatabaseNotInitializedError, UserNotInRoomError, NoUserIdError } from "./errors.mjs";
+import {
+    getFirestore,
+    collection,
+    query,
+    getDocs,
+    doc,
+    addDoc,
+    onSnapshot,
+    deleteDoc,
+    updateDoc,
+    setDoc,
+    getDoc,
+    limit,
+    Firestore,
+    CollectionReference,
+    DocumentReference
+} from "firebase/firestore";
+import {
+    DatabaseNotInitializedError,
+    UserNotInRoomError,
+    NoUserIdError,
+    LatitudeRequiredError,
+    LongitudeRequiredError,
+    LatitudeError,
+    LongitudeError
+} from "./errors.mjs";
 /**
  * The function to start the WebSocket backend of the FindMe web app.
  * @param {object} options An object containing the options for the server
@@ -98,8 +122,7 @@ export async function startServer({
     async function createRoom(ws, lat, lng, time) {
         if (!db) throw new DatabaseNotInitializedError();
         if (ws.roomId) throw new Error("Already in a room");
-        if (!lat || !lng) throw new Error("Latitude and Longitude are required");
-        if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
+        ensureValidGeoLocation(lat, lng);
         if (!time) throw new Error("Time is required");
         do { ws.roomId = generateRoomId(); } while (await roomExists(ws.roomId));
         await joinRoom(ws, lat, lng, time);
@@ -119,8 +142,7 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is already in a room or the given room, if the latitude or longitude is not provided, if the latitude or longitude is invalid, or if the time is not provided
      */
     async function joinRoom(ws, lat, lng, time) {
-        if (!lat || !lng) throw new Error("Latitude and Longitude are required");
-        if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
+        ensureValidGeoLocation(lat, lng);
         if (!time) throw new Error("Time is required");
         const roomRef = collection(db, ws.roomId);
         const userObject = { joinedAt: time, lost: false };
@@ -175,11 +197,14 @@ export async function startServer({
      * Validates a geographical location.
      * @param {number} lat The latitude to validate
      * @param {number} lng The longitude to validate
-     * @returns {boolean}
+     * @returns {void}
+     * @throws if the latitude or longitude is invalid
      */
-    function validGeoLocation(lat, lng) {
-        return typeof lat === 'number' && typeof lng === 'number' &&
-            lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+    function ensureValidGeoLocation(lat, lng) {
+        if (lat === undefined || lat === null) throw new LatitudeRequiredError();
+        if (lng === undefined || lng === null) throw new LongitudeRequiredError();
+        if (typeof lat !== 'number' || lat < -90 || lat > 90) throw new LatitudeError();
+        if (typeof lng !== 'number' || lng < -180 || lng > 180) throw new LongitudeError();
     }
 
     /**
@@ -206,8 +231,7 @@ export async function startServer({
      */
     async function updateLocation(ws, lat, lng, time) {
         ensureUserInRoom(ws);
-        if (!lat || !lng) throw new Error("Latitude and Longitude are required");
-        if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
+        ensureValidGeoLocation(lat, lng);
         if (!time) throw new Error("Time is required");
         return await addDoc(getLocationCollection(ws.roomId, ws.id), { lat, lng, time });
     }
