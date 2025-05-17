@@ -119,7 +119,6 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is already in a room, if the latitude or longitude is not provided, if the latitude or longitude is invalid, or if the time is not provided
      */
     async function createRoom(ws, lat, lng, time) {
-        if (!db) throw new DatabaseNotInitializedError();
         if (ws.roomId) throw new Error("Already in a room");
         ensureValidGeoLocation(lat, lng);
         if (!time) throw new Error("Time is required");
