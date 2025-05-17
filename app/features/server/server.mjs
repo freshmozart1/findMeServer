@@ -135,7 +135,6 @@ export async function startServer({
             const type = change.type;
             const userDoc = change.doc;
             const userId = userDoc.id;
-            const lost = userDoc.data().lost;
             if (type === 'added' && userId !== ws.id) subscribeToLocation(ws, userId);
             else if (type === 'removed') {
                 if (userId !== ws.id) unsubscribeFromLocation(ws, userId);
@@ -143,7 +142,7 @@ export async function startServer({
                     type: 'left',
                     userID: userId
                 }));
-            } else if ((type === 'modified') && (userId !== ws.id) && lost) {
+            } else if ((type === 'modified') && (userId !== ws.id) && userDoc.data().lost) {
                 ws.send(JSON.stringify({
                     type: 'lost',
                     userID: userId
