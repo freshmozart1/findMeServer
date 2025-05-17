@@ -68,9 +68,11 @@ export async function startServer({
      * Checks if a room exists in the database.
      * @param {string} roomId The ID of the room to check
      * @returns {Promise<boolean> | boolean} True if the room exists, false otherwise
+     * @throws if the Firestore database is not initialized or if the room ID is not provided
      */
     async function roomExists(roomId) {
-        if (!db || !roomId) return false;
+        if (!db) throw new DatabaseNotInitializedError();
+        if (!roomId) throw new Error("Room ID is required");
         return !(await getDocs(query(collection(db, roomId), limit(1)))).empty;
     }
 
@@ -117,8 +119,6 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is already in a room or the given room, if the latitude or longitude is not provided, if the latitude or longitude is invalid, or if the time is not provided
      */
     async function joinRoom(ws, lat, lng, time) {
-        if (!db) throw new DatabaseNotInitializedError();
-        if (!ws.roomId) throw new Error("Room ID is required");
         if (!lat || !lng) throw new Error("Latitude and Longitude are required");
         if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
         if (!time) throw new Error("Time is required");
@@ -175,14 +175,11 @@ export async function startServer({
      * Validates a geographical location.
      * @param {number} lat The latitude to validate
      * @param {number} lng The longitude to validate
-     * @returns {true} true if the location is valid
-     * @throws if the latitude or longitude is not a number or is out of range
+     * @returns {boolean}
      */
     function validGeoLocation(lat, lng) {
-        if (typeof lat !== 'number' || typeof lng !== 'number') throw new Error("Latitude and Longitude must be numbers");
-        if (lat < -90 || lat > 90) throw new Error("Latitude must be between -90 and 90");
-        if (lng < -180 || lng > 180) throw new Error("Longitude must be between -180 and 180");
-        return true;
+        return typeof lat === 'number' && typeof lng === 'number' &&
+            lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
     }
 
     /**
@@ -281,9 +278,12 @@ export async function startServer({
                     await createRoom(ws, lat, lng, time);
                     break;
                 case 'join':
-                    ws.roomId = roomId;
-                    ws.id = userId;
-                    await joinRoom(ws, lat, lng, time);
+                    if (!roomExists(roomId)) throw new Error("Room does not exist");
+                    else {
+                        ws.roomId = roomId;
+                        ws.id = userId;
+                        await joinRoom(ws, lat, lng, time);
+                    }
                     break;
                 case 'leave':
                     await leaveRoom(ws);
