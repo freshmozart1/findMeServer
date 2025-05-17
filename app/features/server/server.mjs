@@ -1,9 +1,17 @@
 import { WebSocketServer } from "ws";
+import { Server as SecureServer } from 'https';
+import { Server } from "http";
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, query, getDocs, doc, addDoc, onSnapshot, deleteDoc, updateDoc, setDoc, getDoc, limit } from "firebase/firestore";
 
+/**
+ * 
+ * @param {{ port: number, httpServer: SecureServer | Server | undefined, firebaseConfig: object, databaseId: string, onLog: function }} options 
+ * @returns {SecureServer<typeof WebSocket, typeof IncomingMessage> | Server<typeof WebSocket, typeof IncomingMessage>}
+ */
 export async function startServer({
     port = 8080,
+    httpServer = undefined,
     firebaseConfig,
     databaseId,
     onLog = console.log
@@ -19,8 +27,7 @@ export async function startServer({
         throw error;
     }
 
-    const server = new WebSocketServer({ port });
-    onLog(`WebSocket server is running on ws://localhost:${port}`);
+    const server = new WebSocketServer(httpServer ? { server: httpServer } : { port });
 
     function checkAlive(ws) {
         ws.send(JSON.stringify({ type: 'ping' }));
@@ -205,7 +212,6 @@ export async function startServer({
         checkAlive(ws);
         ws.on('message', (message) => receivedMessage(ws, message));
         ws.on('close', async () => {
-            console.log('Client disconnected');
             if (ws.roomId) leaveRoom(ws);
             clearTimeout(ws.heartbeatTimeout);
         });
