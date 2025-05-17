@@ -3,7 +3,7 @@ import { Server as SecureServer } from 'https';
 import { Server } from "http";
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getFirestore, collection, query, getDocs, doc, addDoc, onSnapshot, deleteDoc, updateDoc, setDoc, getDoc, limit, Firestore, CollectionReference, DocumentReference } from "firebase/firestore";
-
+import { DatabaseNotInitializedError, UserNotInRoomError, NoUserIdError } from "./errors.mjs";
 /**
  * The function to start the WebSocket backend of the FindMe web app.
  * @param {object} options An object containing the options for the server
@@ -96,7 +96,7 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is already in a room, if the latitude or longitude is not provided, if the latitude or longitude is invalid, or if the time is not provided
      */
     async function createRoom(ws, lat, lng, time) {
-        if (!db) throw new Error("Database not initialized");
+        if (!db) throw new DatabaseNotInitializedError();
         if (ws.roomId) throw new Error("Already in a room");
         if (!lat || !lng) throw new Error("Latitude and Longitude are required");
         if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
@@ -119,7 +119,7 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is already in a room or the given room, if the latitude or longitude is not provided, if the latitude or longitude is invalid, or if the time is not provided
      */
     async function joinRoom(ws, lat, lng, time) {
-        if (!db) throw new Error("Database not initialized");
+        if (!db) throw new DatabaseNotInitializedError();
         if (!ws.roomId) throw new Error("Room ID is required");
         if (!lat || !lng) throw new Error("Latitude and Longitude are required");
         if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
@@ -158,9 +158,9 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is not in a room, if the ws object has no user id, or if it has no room snapshot
      */
     async function leaveRoom(ws) {
-        if (!db) throw new Error("Database not initialized");
-        if (!ws.roomId) throw new Error("User is not in a room");
-        if (!ws.id) throw new Error("WebSocket has no user id");
+        if (!db) throw new DatabaseNotInitializedError();
+        if (!ws.roomId) throw new UserNotInRoomError();
+        if (!ws.id) throw new NoUserIdError();
         if (!ws.roomSnapshot) throw new Error("Room snapshot is not initialized");
         const memberRef = doc(db, ws.roomId, ws.id);
         await Promise.all([...(await getDocs(query(collection(memberRef, 'locations')))).docs.map(docSnap => deleteDoc(docSnap.ref)), deleteDoc(memberRef)]);
@@ -209,9 +209,9 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is not in a room, if the ws object has no user id, if the latitude or longitude is not provided, if the latitude or longitude is invalid, or if the time is not provided
      */
     async function updateLocation(ws, lat, lng, time) {
-        if (!db) throw new Error("Database not initialized");
-        if (!ws.roomId) throw new Error("User is not in a room");
-        if (!ws.id) throw new Error("WebSocket has no user id");
+        if (!db) throw new DatabaseNotInitializedError();
+        if (!ws.roomId) throw new UserNotInRoomError();
+        if (!ws.id) throw new NoUserIdError();
         if (!lat || !lng) throw new Error("Latitude and Longitude are required");
         if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
         if (!time) throw new Error("Time is required");
@@ -225,8 +225,8 @@ export async function startServer({
      * @throws if the user is not in a room, if the ws object has no user id, or if the ws user id is the same as the function parameter
      */
     function subscribeToLocation(ws, userId) {
-        if (!ws.id) throw new Error('WebSocket has no user id');
-        if (!ws.roomId) throw new Error('User is not a member of a room');
+        if (!ws.id) throw new NoUserIdError();
+        if (!ws.roomId) throw new UserNotInRoomError();
         if (ws.id === userId) throw new Error("Cannot subscribe to own location");
         const unsubscribe = onSnapshot(getLocationCollection(ws.roomId, userId), locSnap => {
             locSnap.docChanges().forEach(({ type, doc }) => {
@@ -260,7 +260,7 @@ export async function startServer({
     function unsubscribeFromLocation(ws, userId = undefined, index = undefined) {
         if (!ws) throw new Error("WebSocket is required to unsubscribe from location");
         if (!ws.locationSnapshots) throw new Error("Location snapshots are not initialized");
-        if (!ws.id) throw new Error("WebSocket has no user id");
+        if (!ws.id) throw new NoUserIdError();
         if (index === undefined || index === null) {
             if (!userId) throw new Error("User ID is required to unsubscribe from location when index is not provided");
             if (ws.id === userId) throw new Error("Cannot unsubscribe from own location");
