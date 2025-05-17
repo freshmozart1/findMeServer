@@ -75,16 +75,14 @@ export async function startServer({
     }
 
     /**
-     * Checks if a user is a member of a room.
-     * @param {string} roomId The ID of the room to check
-     * @param {string} userId The ID of the user to check
-     * @returns {Promise<boolean>} True if the user is a member of the room, false otherwise
-     * @throws if the room ID or user ID is not provided
-     */
-    async function checkIfMemberExists(roomId, userId) {
-        if (!roomId) throw new Error("Room id is required");
-        if (!userId) throw new Error("User id is required");
-        return (await getDoc(doc(db, roomId, userId))).exists();
+ * Ensures that the user is in a room.
+ * @param {WebSocket} ws The WebSocket connection of the user
+ * @throws if the Firestore database is not initialized, if the user is not in a room, or if the ws object has no user id
+ */
+    function ensureUserInRoom(ws) {
+        if (!db) throw new DatabaseNotInitializedError();
+        if (!ws.roomId) throw new UserNotInRoomError();
+        if (!ws.id) throw new NoUserIdError();
     }
 
     /**
@@ -125,10 +123,13 @@ export async function startServer({
         if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
         if (!time) throw new Error("Time is required");
         const roomRef = collection(db, ws.roomId);
-        if (!ws.id) ws.id = (await addDoc(roomRef, { joinedAt: time, lost: false })).id;
-        else {
-            if (await checkIfMemberExists(ws.roomId, ws.id)) throw new Error("User already exists in the room");
-            await setDoc(doc(db, ws.roomId, ws.id), { joinedAt: time, lost: false });
+        const userRef = ws.id ? doc(roomRef, ws.id) : null;
+        if (!ws.id) {
+            ws.id = (await addDoc(roomRef, { joinedAt: time, lost: false })).id;
+        } else {
+            await ((await getDoc(userRef)).exists()
+                ? updateDoc(userRef, { joinedAt: time, lost: false })
+                : setDoc(userRef, { joinedAt: time, lost: false }));
         }
         ws.roomSnapshot = onSnapshot(roomRef, snap => snap.docChanges().forEach(change => {
             const type = change.type;
@@ -158,9 +159,7 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is not in a room, if the ws object has no user id, or if it has no room snapshot
      */
     async function leaveRoom(ws) {
-        if (!db) throw new DatabaseNotInitializedError();
-        if (!ws.roomId) throw new UserNotInRoomError();
-        if (!ws.id) throw new NoUserIdError();
+        ensureUserInRoom(ws);
         if (!ws.roomSnapshot) throw new Error("Room snapshot is not initialized");
         const memberRef = doc(db, ws.roomId, ws.id);
         await Promise.all([...(await getDocs(query(collection(memberRef, 'locations')))).docs.map(docSnap => deleteDoc(docSnap.ref)), deleteDoc(memberRef)]);
@@ -209,9 +208,7 @@ export async function startServer({
      * @throws if the Firestore database is not initialized, if the user is not in a room, if the ws object has no user id, if the latitude or longitude is not provided, if the latitude or longitude is invalid, or if the time is not provided
      */
     async function updateLocation(ws, lat, lng, time) {
-        if (!db) throw new DatabaseNotInitializedError();
-        if (!ws.roomId) throw new UserNotInRoomError();
-        if (!ws.id) throw new NoUserIdError();
+        ensureUserInRoom(ws);
         if (!lat || !lng) throw new Error("Latitude and Longitude are required");
         if (!validGeoLocation(lat, lng)) throw new Error("Invalid Latitude and Longitude");
         if (!time) throw new Error("Time is required");
@@ -225,8 +222,7 @@ export async function startServer({
      * @throws if the user is not in a room, if the ws object has no user id, or if the ws user id is the same as the function parameter
      */
     function subscribeToLocation(ws, userId) {
-        if (!ws.id) throw new NoUserIdError();
-        if (!ws.roomId) throw new UserNotInRoomError();
+        ensureUserInRoom(ws);
         if (ws.id === userId) throw new Error("Cannot subscribe to own location");
         const unsubscribe = onSnapshot(getLocationCollection(ws.roomId, userId), locSnap => {
             locSnap.docChanges().forEach(({ type, doc }) => {
@@ -258,9 +254,9 @@ export async function startServer({
      * @throws if the WebSocket connection is not provided, if the location snapshots are not initialized, if the WebSocket has no user id, or if neither the user id nor the index is provided
      */
     function unsubscribeFromLocation(ws, userId = undefined, index = undefined) {
+        ensureUserInRoom(ws);
         if (!ws) throw new Error("WebSocket is required to unsubscribe from location");
         if (!ws.locationSnapshots) throw new Error("Location snapshots are not initialized");
-        if (!ws.id) throw new NoUserIdError();
         if (index === undefined || index === null) {
             if (!userId) throw new Error("User ID is required to unsubscribe from location when index is not provided");
             if (ws.id === userId) throw new Error("Cannot unsubscribe from own location");
