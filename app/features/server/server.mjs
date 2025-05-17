@@ -73,7 +73,7 @@ export async function startServer({
         ws.send(JSON.stringify({ type: 'ping' }));
         clearTimeout(ws.heartbeatTimeout);
         ws.heartbeatTimeout = setTimeout(async () => {
-            if (ws.roomId) {
+            if (ws.roomId && roomExists(ws.roomId)) {
                 await updateDoc(doc(db, ws.roomId, ws.id), { lost: true });
             }
             ws.terminate();
