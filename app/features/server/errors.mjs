@@ -1,49 +1,53 @@
+function createErrorClass(name, message) {
+    return class extends Error {
+        constructor() {
+            super(message);
+            this.name = name;
+        }
+    };
+}
+
 export class DatabaseNotInitializedError extends Error {
     constructor() {
-        super("Database not initialized");
-        this.name = "DatabaseNotInitializedError";
+        super('Database not initialized');
+        this.name = 'DatabaseNotInitializedError';
     }
 }
 
-export class UserNotInRoomError extends Error {
-    constructor() {
-        super("User is not in a room");
-        this.name = "UserNotInRoomError";
-    }
-}
+export const UserNotInRoomError = createErrorClass('UserNotInRoomError', 'User is not in a room');
 
-export class NoUserIdError extends Error {
-    constructor() {
-        super("WebSocket has no user id");
-        this.name = "NoUserIdError";
-    }
-}
+export const WebSocketUserIdError = createErrorClass('WebSocketUserIdError', 'WebSocket has no user id');
 
-export class LatitudeRequiredError extends Error {
-    constructor() {
-        super("Latitude is required");
-        this.name = "LatitudeRequiredError";
-    }
-}
+export const LatitudeRequiredError = createErrorClass('LatitudeRequiredError', 'Latitude is required');
 
-export class LongitudeRequiredError extends Error {
-    constructor() {
-        super("Longitude is required");
-        this.name = "LongitudeRequiredError";
-    }
-}
+export const LongitudeRequiredError = createErrorClass('LongitudeRequiredError', 'Longitude is required');
 
-export class LatitudeError extends Error {
-    constructor() {
-        super("Latitude is invalid");
-        this.name = "LatitudeError";
-    }
-}
+export const LatitudeError = createErrorClass('LatitudeError', 'Latitude is invalid');
 
+export const LongitudeError = createErrorClass('LongitudeError', 'Longitude is invalid');
 
-export class LongitudeError extends Error {
-    constructor() {
-        super("Longitude is invalid");
-        this.name = "LongitudeError";
-    }
-}
+export const TimeError = createErrorClass('TimeError', 'Time is required');
+
+export const WebSocketError = createErrorClass('WebSocketError', 'WebSocket is required');
+
+export const RoomIdError = createErrorClass('RoomIdError', 'WebSocket has no room id');
+
+export const UserIdError = createErrorClass('UserIdError', 'User id is required');
+
+export const MessageError = createErrorClass('MessageError', 'Received WebSocket Message must be a string');
+
+export const MessageTypeRequiredError = createErrorClass('MessageTypeRequiredError', 'Message type is required');
+
+export const MessageTypeError = createErrorClass('MessageTypeError', 'Message type is invalid');
+
+export const RoomError = createErrorClass('RoomError', 'Room does not exist');
+
+export const LocationSnapshotsError = createErrorClass('LocationSnapshotsError', 'WebSocket has no location snapshots');
+
+export const SubscribeToOwnLocationError = createErrorClass('SubscribeToOwnLocationError', 'Cannot subscribe to own location');
+
+export const UnsubscribeFromOwnLocationError = createErrorClass('UnsubscribeFromOwnLocationError', 'Cannot unsubscribe from own location');
+
+export const RoomSnapshotError = createErrorClass('RoomSnapshotError', 'WebSocket has no room snapshot');
+
+export const UserInRoomError = createErrorClass('UserInRoomError', 'User is already in a room');
