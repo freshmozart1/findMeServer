@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { Server as SecureServer } from 'https';
 import { Server } from "http";
-import { initializeApp, FirebaseApp } from 'firebase/app';
+import { initializeApp } from 'firebase/app';
 import {
     getFirestore,
     collection,
@@ -60,7 +60,7 @@ export async function startServer({
     onLog = console.log
 }) {
     /**
-     * @type {FirebaseApp} The main Firebase app instance needed for the Firestore database
+     * @type {import("firebase/app").FirebaseApp} The main Firebase app instance needed for the Firestore database
      */
     let app;
     /**
