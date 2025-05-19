@@ -16,7 +16,7 @@
   "main": "index.js",
   "scripts": {
     "test": "NODE_ENV=development vitest",
-    "start": "node index.js"
+    "dev": "NODE_ENV=development node index.js"
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.11.0",
