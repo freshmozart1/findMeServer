@@ -4,8 +4,12 @@ import { createServer } from "http";
 
 const { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId, databaseId } = getConfig();
 
-startServer({
-    httpServer: createServer(),
+const httpServer = createServer();
+
+await startServer({
+    httpServer,
     firebaseConfig: { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId },
     databaseId
 });
+
+httpServer.listen();
