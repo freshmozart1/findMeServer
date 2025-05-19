@@ -49,7 +49,7 @@ import {
  * @param {number} [options.port=8080] The optional port to start the server on. The default is 8080. Port will be ignored if a http server is provided.
  * @param {SecureServer | Server } [options.httpServer] The optional HTTP server to use
  * @param {function} [options.onLog] The function to call for logging
- * @returns {SecureServer<typeof WebSocket, typeof IncomingMessage> | Server<typeof WebSocket, typeof IncomingMessage>}
+ * @returns {Promise<SecureServer<typeof WebSocket, typeof IncomingMessage> | Server<typeof WebSocket, typeof IncomingMessage>>}
  * @throws if Firebase initialization fails
  */
 export async function startServer({
