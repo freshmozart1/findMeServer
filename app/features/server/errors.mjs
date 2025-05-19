@@ -34,7 +34,7 @@ export const RoomIdError = createErrorClass('RoomIdError', 'WebSocket has no roo
 
 export const UserIdError = createErrorClass('UserIdError', 'User id is required');
 
-export const MessageError = createErrorClass('MessageError', 'Received WebSocket Message must be a string');
+export const MessageError = createErrorClass('MessageError', 'A Message is required');
 
 export const MessageTypeRequiredError = createErrorClass('MessageTypeRequiredError', 'Message type is required');
 

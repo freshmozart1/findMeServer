@@ -1,4 +1,4 @@
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import { Server as SecureServer } from 'https';
 import { Server } from "http";
 import { initializeApp, FirebaseApp } from 'firebase/app';
@@ -310,12 +310,12 @@ export async function startServer({
     /**
      * Handles incoming messages from clients.
      * @param {WebSocket} ws The WebSocket connection of the user
-     * @param {string} message The incoming message
+     * @param {WebSocket.RawData} message The incoming message
      */
     async function receivedMessage(ws, message) {
         try {
             if (!ws) throw new WebSocketError();
-            if (!message || typeof message !== 'string') throw new MessageError();
+            if (!message) throw new MessageError();
             const { type: messageType, lat, lng, roomId, userId, time } = JSON.parse(message);
             if (!messageType) throw new MessageTypeRequiredError();
             switch (messageType) {
