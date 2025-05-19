@@ -12,4 +12,6 @@ await startServer({
     databaseId
 });
 
-httpServer.listen();
+httpServer.listen(8080, "localhost", () => {
+    console.log(`Test server runs on ${httpServer.address().address}:${httpServer.address().port}`);
+});
