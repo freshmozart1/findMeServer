@@ -1,34 +1,30 @@
-import { beforeAll, afterAll, describe, it, expect } from "vitest";
-import { startTestServer, TestWebSocket } from "./serverTestUtils.mjs";
-import { Http2Server } from "node:http2";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { TestWebSocket } from "./serverTestUtils.mjs";
 
 describe("WebSocket Server", () => {
     /**
-     * @type {Http2Server}
+     * @type {TestWebSocket}
      */
-    let server;
-    beforeAll(async () => {
-        server = await startTestServer();
+    let roomOpener;
+
+    beforeEach(async () => {
+        roomOpener = new TestWebSocket('ws://localhost:8080');
+        await roomOpener.waitUntil('open');
     });
 
-    afterAll(() => {
-        server.close();
+    afterEach(async () => {
+        roomOpener.close();
     });
 
     it("should respond with a ping upon a pong", async () => {
-        const client = new TestWebSocket('https://localhost:8080');
-        await client.waitUntil('open');
-        const responseMessage = await new Promise(resolve => {
-            client.addEventListener('message', (event) => {
-                const data = JSON.parse(event.data);
-                if (data.type === 'ping') {
-                    resolve(data);
-                }
-            });
-            client.send(JSON.stringify({ type: 'pong' }));
-        });
-        expect(responseMessage).toEqual({
-            type: 'ping'
-        });
+        const data = await roomOpener.sendAndWaitForResponse({ type: 'pong' }, 'ping');
+        expect(data).toEqual({ type: 'ping' });
+    });
+
+    it('should respond with a created message upon a create message', {
+        timeout: 5000
+    }, async () => {
+        const data = await roomOpener.sendAndWaitForResponse({ type: 'create', lat: 0, lng: 0 }, 'created');
+        expect(data).contains({ type: 'created' });
     });
 });
