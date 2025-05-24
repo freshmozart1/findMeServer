@@ -42,6 +42,8 @@ export const MessageTypeError = createErrorClass('MessageTypeError', 'Message ty
 
 export const RoomError = createErrorClass('RoomError', 'Room does not exist');
 
+export const RoomExistsError = createErrorClass('RoomExistsError', 'Room already exists');
+
 export const LocationSnapshotsError = createErrorClass('LocationSnapshotsError', 'WebSocket has no location snapshots');
 
 export const SubscribeToOwnLocationError = createErrorClass('SubscribeToOwnLocationError', 'Cannot subscribe to own location');
