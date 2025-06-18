@@ -59,12 +59,7 @@ export class FindMeServer extends WebSocketServer {
             });
             ws.on('close', async () => {
                 if (roomMember.roomId && roomMember.id) {
-                    const infoRef = await roomMember.leaveRoom();
-                    await runTransaction(this.#firestoreDatabase, async transaction => {
-                        const infoDoc = await transaction.get(infoRef);
-                        const memberCount = infoDoc.data().memberCount;
-                        if (memberCount === 0) transaction.delete(infoRef);
-                    });
+                    await roomMember.leaveRoom();
                 }
                 clearTimeout(roomMember.heartbeatTimeout);
             });
