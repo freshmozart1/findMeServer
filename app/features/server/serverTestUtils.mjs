@@ -12,15 +12,14 @@ export async function userInRoom(roomId, userId) {
 }
 
 
-async function roomOpener({ }, use) {
-    const _roomOpener = new TestWebSocket('ws://localhost:8080');
-    await _roomOpener.waitUntil('open');
-    await use(_roomOpener);
-    _roomOpener.close();
-}
 export const test = baseTest.extend({
     /** @type {TestWebSocket} */
-    roomOpener
+    websocket: async ({ }, use) => {
+        const websocket = new TestWebSocket('ws://localhost:8080');
+        await websocket.waitUntil('open');
+        await use(websocket);
+        websocket.close();
+    }
 });
 
 export class TestWebSocket extends WebSocket {

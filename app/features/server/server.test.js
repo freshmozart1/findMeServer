@@ -2,28 +2,28 @@ import { describe, it, expect, beforeEach, afterEach, onTestFinished } from "vit
 import { test, userInRoom } from "./serverTestUtils.mjs";
 
 describe("Test WebSocket Server connection", () => {
-    test('should open a WebSocket connection', ({ roomOpener }) => {
-        expect(roomOpener.readyState).toBe(roomOpener.OPEN);
+    test('should open a WebSocket connection', ({ websocket }) => {
+        expect(websocket.readyState).toBe(websocket.OPEN);
     });
 
-    test('should respond with a ping upon a pong', async ({ roomOpener }) => {
+    test('should respond with a ping upon a pong', async ({ websocket }) => {
         await new Promise((resolve) => {
             let pingCount = 0;
             const pingListener = ({ data }) => {
                 if (JSON.parse(data).type === 'ping') {
                     pingCount++;
                     if (pingCount === 2) {
-                        roomOpener.removeEventListener('message', pingListener);
+                        websocket.removeEventListener('message', pingListener);
                         resolve();
                     }
                 }
             };
-            roomOpener.addEventListener('message', pingListener);
-            roomOpener.send(JSON.stringify({ type: 'pong' }));
+            websocket.addEventListener('message', pingListener);
+            websocket.send(JSON.stringify({ type: 'pong' }));
         });
     });
 
-    test('should respond with a created message upon a create message', async ({ roomOpener }) => {
+    test('should respond with a created message upon a create message', async ({ websocket }) => {
         await new Promise((resolve, reject) => {
             const createdListener = async ({ data }) => {
                 const message = JSON.parse(data);
@@ -32,12 +32,12 @@ describe("Test WebSocket Server connection", () => {
                 if (message.type === 'created') {
                     expect(message).toEqual({ type: 'created', roomId: expect.any(String), userId: expect.any(String) });
                     await expect(userInRoom(message.roomId, message.userId)).resolves.toBeTruthy();
-                    roomOpener.removeEventListener('message', createdListener);
+                    websocket.removeEventListener('message', createdListener);
                     resolve();
                 } else reject(new Error(`Unexpected message type: ${message.type}`));
             };
-            roomOpener.addEventListener('message', createdListener);
-            roomOpener.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+            websocket.addEventListener('message', createdListener);
+            websocket.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
         });
     });
 });
