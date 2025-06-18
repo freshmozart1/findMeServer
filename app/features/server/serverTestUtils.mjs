@@ -1,4 +1,16 @@
 import WebSocket from "ws";
+import { test as baseTest } from "vitest";
+
+const roomOpener = async ({ }, use) => {
+    const _roomOpener = new TestWebSocket('ws://localhost:8080');
+    await _roomOpener.waitUntil('open');
+    await use(_roomOpener);
+    _roomOpener.close();
+}
+export const test = baseTest.extend({
+    /** @type {TestWebSocket} */
+    roomOpener
+});
 
 export class TestWebSocket extends WebSocket {
     /**
@@ -37,30 +49,6 @@ export class TestWebSocket extends WebSocket {
                 if (this.readyState === this.CLOSED && state === 'close') return resolve();
                 reject(new Error(`WebSocket did not ${state} in time`));
             }, timeout);
-        });
-    }
-
-    /**
-     * Sends a message over the WebSocket and waits for a response of the specified type.
-     *
-     * @param {Object} message - The message object to send through the WebSocket.
-     * @param {string} responseType - The expected type of the response message to resolve the promise.
-     * @returns {Promise<Object>} A promise that resolves with the response data object when a message of the specified type is received,
-     * or rejects if the WebSocket is not open, if there is an error sending the message, or if the response cannot be parsed by JSON.parse().
-     */
-    sendAndWaitForResponse(message, responseType) {
-        return new Promise((resolve, reject) => {
-            if (this.readyState !== this.OPEN) return reject(new Error('WebSocket is not open'));
-            const listener = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === responseType) resolve(data);
-                } catch (err) {
-                    reject(new Error('Error parsing message: ' + err));
-                }
-            };
-            this.addEventListener('message', listener);
-            this.send(JSON.stringify(message), err => err && reject(new Error('WebSocket send error: ' + err)));
         });
     }
 }
