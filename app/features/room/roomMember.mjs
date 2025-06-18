@@ -160,31 +160,33 @@ export class RoomMember {
      * @throws {UserInRoomError} If the user is not in a room
      * @throws {Error} If the user ID is not set
      * @memberof RoomMember
-     * @returns {Promise<DocumentReference>} A promise that resolves when the user has left the room
      */
-
     async leaveRoom() {
         if (!this.roomId) throw new Error('User is not in a room');
         if (!this.id) throw new Error('User ID is not set');
         const infoRef = doc(this.roomRef, 'info');
+        Object.values(this.locationUnsubscribeMap).forEach(unsubscribe => unsubscribe());
+        if (this.roomUnsubscribe) this.roomUnsubscribe();
         await runTransaction(this.#firestoreDatabase, async transaction => {
             const infoDoc = await transaction.get(infoRef);
             if (!infoDoc.exists()) throw new Error('Room does not exist');
             this.#deleteCollectionDocuments();
-            transaction.update(infoRef, { memberCount: infoDoc.data().memberCount - 1 });
+            const memberCount = infoDoc.data().memberCount;
+            if (memberCount <= 1) {
+                transaction.delete(infoRef);
+            } else {
+                transaction.update(infoRef, { memberCount: memberCount - 1 });
+            }
             transaction.delete(this.ref);
         });
         this.ws.send(JSON.stringify({
             type: 'left',
             userId: this.id
         }));
-        Object.values(this.locationUnsubscribeMap).forEach(unsubscribe => unsubscribe());
-        if (this.roomUnsubscribe) this.roomUnsubscribe();
         this.locationUnsubscribeMap = {};
         this.roomUnsubscribe = undefined;
         this.roomId = undefined;
         this.id = undefined;
-        return infoRef;
     }
 
     /**
@@ -198,7 +200,6 @@ export class RoomMember {
      * @throws {LatitudeError} If latitude is not a number or out of range
      * @throws {LongitudeError} If longitude is not a number or out of range
      */
-
     async joinRoom(roomId, lat, lng) {
         if (this.roomId) throw new UserInRoomError();
         if (lat === undefined || lat === null) throw new LatitudeRequiredError();
