@@ -1,7 +1,18 @@
 import WebSocket from "ws";
 import { test as baseTest } from "vitest";
+import { getConfig } from "./getConfig.mjs";
+import { collection, doc, getDoc, getFirestore } from "firebase/firestore";
+import { initializeApp } from "firebase/app";
 
-const roomOpener = async ({ }, use) => {
+const { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId, databaseId } = getConfig();
+const database = getFirestore(initializeApp({ apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId }), databaseId);
+
+export async function userInRoom(roomId, userId) {
+    return (await getDoc(doc(database, roomId, userId))).exists();
+}
+
+
+async function roomOpener({ }, use) {
     const _roomOpener = new TestWebSocket('ws://localhost:8080');
     await _roomOpener.waitUntil('open');
     await use(_roomOpener);

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, onTestFinished } from "vitest";
-import { test } from "./serverTestUtils.mjs";
+import { test, userInRoom } from "./serverTestUtils.mjs";
 
 describe("Test WebSocket Server connection", () => {
     test('should open a WebSocket connection', ({ roomOpener }) => {
@@ -25,12 +25,13 @@ describe("Test WebSocket Server connection", () => {
 
     test('should respond with a created message upon a create message', async ({ roomOpener }) => {
         await new Promise((resolve, reject) => {
-            const createdListener = ({ data }) => {
+            const createdListener = async ({ data }) => {
                 const message = JSON.parse(data);
                 expect(message).toBeDefined();
                 if (message.type === 'ping') return;
                 if (message.type === 'created') {
                     expect(message).toEqual({ type: 'created', roomId: expect.any(String), userId: expect.any(String) });
+                    await expect(userInRoom(message.roomId, message.userId)).resolves.toBeTruthy();
                     roomOpener.removeEventListener('message', createdListener);
                     resolve();
                 } else reject(new Error(`Unexpected message type: ${message.type}`));
