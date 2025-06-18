@@ -1,30 +1,42 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { TestWebSocket } from "./serverTestUtils.mjs";
+import { describe, it, expect, beforeEach, afterEach, onTestFinished } from "vitest";
+import { test } from "./serverTestUtils.mjs";
 
-describe("WebSocket Server", () => {
-    /**
-     * @type {TestWebSocket}
-     */
-    let roomOpener;
-
-    beforeEach(async () => {
-        roomOpener = new TestWebSocket('ws://localhost:8080');
-        await roomOpener.waitUntil('open');
+describe("Test WebSocket Server connection", () => {
+    test('should open a WebSocket connection', ({ roomOpener }) => {
+        expect(roomOpener.readyState).toBe(roomOpener.OPEN);
     });
 
-    afterEach(async () => {
-        roomOpener.close();
+    test('should respond with a ping upon a pong', async ({ roomOpener }) => {
+        await new Promise((resolve) => {
+            let pingCount = 0;
+            const pingListener = ({ data }) => {
+                if (JSON.parse(data).type === 'ping') {
+                    pingCount++;
+                    if (pingCount === 2) {
+                        roomOpener.removeEventListener('message', pingListener);
+                        resolve();
+                    }
+                }
+            };
+            roomOpener.addEventListener('message', pingListener);
+            roomOpener.send(JSON.stringify({ type: 'pong' }));
+        });
     });
 
-    it("should respond with a ping upon a pong", async () => {
-        const data = await roomOpener.sendAndWaitForResponse({ type: 'pong' }, 'ping');
-        expect(data).toEqual({ type: 'ping' });
-    });
-
-    it('should respond with a created message upon a create message', {
-        timeout: 5000
-    }, async () => {
-        const data = await roomOpener.sendAndWaitForResponse({ type: 'create', lat: 0, lng: 0 }, 'created');
-        expect(data).contains({ type: 'created' });
+    test('should respond with a created message upon a create message', async ({ roomOpener }) => {
+        await new Promise((resolve, reject) => {
+            const createdListener = ({ data }) => {
+                const message = JSON.parse(data);
+                expect(message).toBeDefined();
+                if (message.type === 'ping') return;
+                if (message.type === 'created') {
+                    expect(message).toEqual({ type: 'created', roomId: expect.any(String), userId: expect.any(String) });
+                    roomOpener.removeEventListener('message', createdListener);
+                    resolve();
+                } else reject(new Error(`Unexpected message type: ${message.type}`));
+            };
+            roomOpener.addEventListener('message', createdListener);
+            roomOpener.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+        });
     });
 });
