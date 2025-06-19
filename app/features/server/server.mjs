@@ -1,7 +1,15 @@
 import { WebSocketServer, WebSocket } from "ws";
-import { Firestore } from "firebase-admin/firestore";
+import { Firestore, getFirestore } from "firebase-admin/firestore";
 import { DatabaseNotInitializedError, MessageError, MessageTypeRequiredError, WebSocketError } from "./errors.mjs";
 import { RoomMember } from "../room/roomMember.mjs";
+import { initializeApp } from "firebase-admin/app";
+import { createRequire } from "module";
+import admin from "firebase-admin";
+const require = createRequire(import.meta.url);
+
+initializeApp({
+    credential: admin.credential.cert(require("../../../firebase.secret.json"))
+});
 
 /**
  * The FindMeServer class extends the WebSocketServer class to create a WebSocket server for the FindMe web app.
@@ -24,10 +32,9 @@ export class FindMeServer extends WebSocketServer {
      * @param {Firestore} firestoreDatabase
      * @param {WebSocket.ServerOptions} webSocketServerOptions
      */
-    constructor(firestoreDatabase, webSocketServerOptions, onLog = console.log) {
-        if (!firestoreDatabase) throw new DatabaseNotInitializedError();
+    constructor(webSocketServerOptions, onLog = console.log) {
         super(webSocketServerOptions);
-        this.#firestoreDatabase = firestoreDatabase;
+        this.#firestoreDatabase = getFirestore(undefined, 'findme-db');
         this.#onLog = onLog;
         this.on('connection', (ws) => {
             if (!ws) throw new WebSocketError();
