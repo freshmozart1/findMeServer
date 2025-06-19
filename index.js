@@ -1,15 +1,16 @@
 import { FindMeServer } from "./app/features/server/server.mjs";
-import { getConfig } from "./app/features/server/getConfig.mjs";
 import { createServer } from "http";
-import { getFirestore } from "firebase/firestore";
-import { initializeApp } from "firebase/app";
+import { applicationDefault, initializeApp } from 'firebase-admin/app';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 
-const { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId, databaseId } = getConfig();
+initializeApp({
+    credential: applicationDefault()
+});
 
 const httpServer = createServer();
 
 try {
-    new FindMeServer(getFirestore(initializeApp({ apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId }), databaseId), { server: httpServer });
+    new FindMeServer(getAdminFirestore(undefined, 'findme-db'), { server: httpServer });
 } catch (error) {
     console.error("Error starting server:", error);
     process.exit(1);
