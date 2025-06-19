@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
-import { DatabaseNotInitializedError, LatitudeError, LatitudeRequiredError, LongitudeError, LongitudeRequiredError, MessageError, MessageTypeError, MessageTypeRequiredError, UserInRoomError, WebSocketError } from "./errors.mjs";
-import { collection, doc, writeBatch, limit, onSnapshot, runTransaction, serverTimestamp, query, getDocs } from "firebase/firestore";
+import { Firestore } from "firebase-admin/firestore";
+import { DatabaseNotInitializedError, MessageError, MessageTypeRequiredError, WebSocketError } from "./errors.mjs";
 import { RoomMember } from "../room/roomMember.mjs";
 
 /**
@@ -10,18 +10,18 @@ import { RoomMember } from "../room/roomMember.mjs";
  */
 export class FindMeServer extends WebSocketServer {
     /**
-     * @private
-     * @type {import("firebase/firestore").Firestore} The main Firestore database instance responsible for all rooms
-     */
-    /**
      * A function to log messages, defaults to console.log
      * @private
      * @type {function(string): void}
      */
     #onLog;
+    /**
+     * @private
+     * @type {Firestore} The main Firestore database instance responsible for all rooms
+     */
     #firestoreDatabase;
     /**
-     * @param {import("firebase/firestore").Firestore} firestoreDatabase
+     * @param {Firestore} firestoreDatabase
      * @param {WebSocket.ServerOptions} webSocketServerOptions
      */
     constructor(firestoreDatabase, webSocketServerOptions, onLog = console.log) {
@@ -48,12 +48,16 @@ export class FindMeServer extends WebSocketServer {
                         case 'join':
                             await roomMember.joinRoom(roomId, lat, lng);
                             break;
-                        default: throw new MessageTypeError();
+                        default: throw new Error(`Unknown message type: ${messageType}`);
                     }
                 }
                 catch (error) {
                     this.#onLog(`Error processing message: ${error.message ?? 'Unknown error'}`);
                     this.#onLog(error.stack ?? 'No stack trace');
+                    if (roomMember.roomId && roomMember.id) {
+                        await roomMember.leaveRoom();
+                    }
+                    clearTimeout(roomMember.heartbeatTimeout);
                     ws.close(1011, error.message ?? 'Unknown error');
                 }
             });
@@ -73,12 +77,13 @@ export class FindMeServer extends WebSocketServer {
     #checkAlive(roomMember) {
         roomMember.ws.send(JSON.stringify({ type: "ping" }));
         clearTimeout(roomMember.heartbeatTimeout);
-        roomMember.heartbeatTimeout = setTimeout(() => {
+        roomMember.heartbeatTimeout = setTimeout(async () => {
             if (roomMember.roomId && roomMember.id) {
                 if (!this.#firestoreDatabase) throw new DatabaseNotInitializedError();
-                runTransaction(this.#firestoreDatabase, async transaction => {
-                    const webSocket = await transaction.get(roomMember.ref);
-                    if ((await transaction.get(roomMember.ref)).exists()) transaction.update(roomMember.ref, { lost: true });
+                await this.#firestoreDatabase.runTransaction(async transaction => {
+                    if ((await transaction.get(roomMember.ref)).exists()) {
+                        transaction.update(roomMember.ref, { lost: true });
+                    }
                 });
             }
             roomMember.ws.terminate();
