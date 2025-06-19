@@ -1,15 +1,20 @@
 import WebSocket from "ws";
 import { test as baseTest } from "vitest";
-import { getConfig } from "./getConfig.mjs";
-import { collection, doc, getDoc, getFirestore } from "firebase/firestore";
-import { initializeApp } from "firebase/app";
+import { getFirestore, Firestore } from "firebase-admin/firestore";
+import { initializeApp } from "firebase-admin/app";
+import admin from "firebase-admin";
+import serviceAccount from "../../../firebase.secret.json" assert { type: "json" };
+import { RoomMember } from "../room/roomMember.mjs";
 
-const { apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId, databaseId } = getConfig();
-const database = getFirestore(initializeApp({ apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId }), databaseId);
 
-export async function userInRoom(roomId, userId) {
-    return (await getDoc(doc(database, roomId, userId))).exists();
-}
+// initializeApp({
+//     credential: admin.credential.cert(serviceAccount)
+// });
+// const database = getFirestore(undefined, 'findme-db');
+
+// export async function userInRoom(roomId, userId) {
+//     return (await getDoc(doc(database, roomId, userId))).exists();
+// }
 
 
 export const test = baseTest.extend({
@@ -19,6 +24,21 @@ export const test = baseTest.extend({
         await websocket.waitUntil('open');
         await use(websocket);
         websocket.close();
+    },
+    /** @type {Firestore} */
+    database: async ({ }, use) => {
+        initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+        await use(getFirestore(undefined, 'findme-db'));
+    },
+    /** @type {RoomMember} */
+    roomOpener: async ({ database }, use) => {
+        const websocket = new TestWebSocket('ws://localhost:8080');
+        await websocket.waitUntil('open');
+        const roomMember = new RoomMember(database, websocket);
+        await roomMember.createRoom(0, 0);
+        // await use(roomMember);
     }
 });
 
