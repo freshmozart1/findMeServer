@@ -192,7 +192,7 @@ export class RoomMember {
         const infoRef = this.#firestoreDatabase.collection(this.roomId).doc('info');
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
-            if (!infoDoc.exists()) throw new Error('Room does not exist');
+            if (!infoDoc.exists) throw new Error('Room does not exist');
             transaction.update(infoRef, { memberCount: infoDoc.data().memberCount + 1 });
             const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
             this.id = this.ref.id;
@@ -218,24 +218,24 @@ export class RoomMember {
         if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
         if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
         const alphanumericCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        let success = false, attempts = 0, infoRef;
-        while (!success && attempts < 10) {
-            this.roomId = Array.from({ length: 4 }, () => alphanumericCharacters[Math.floor(Math.random() * alphanumericCharacters.length)]).join('');
-            infoRef = doc(this.roomRef, 'info');
-            success = !(await getDoc(infoRef)).exists();
-            attempts++;
-        }
-        if (!success) throw new Error('Failed to create room after 10 attempts');
-        await runTransaction(this.#firestoreDatabase, async transaction => {
-            transaction.set(infoRef, { createdAt: serverTimestamp(), memberCount: 1 });
-            const clientFields = { joinedAt: serverTimestamp(), lost: false };
+        let success = false, attempts = 0, infoDoc;
+        await this.#firestoreDatabase.runTransaction(async transaction => {
+            while (!success && attempts < 10) {
+                this.roomId = Array.from({ length: 4 }, () => alphanumericCharacters[Math.floor(Math.random() * alphanumericCharacters.length)]).join('');
+                infoDoc = await transaction.get(this.#firestoreDatabase.collection(this.roomId).doc('info'));
+                success = !infoDoc.exists;
+                attempts++;
+            }
+            if (!success) throw new Error('Failed to create room after 10 attempts');
+            transaction.set(infoDoc.ref, { createdAt: FieldValue.serverTimestamp(), memberCount: 1 });
+            const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
             this.id = this.ref.id;
             transaction.set(this.ref, clientFields);
             this.roomUnsubscribe = await this.#createRoomSnapshotListener();
-            transaction.set(doc(collection(this.#firestoreDatabase, this.roomId, this.id, 'locations')), {
+            transaction.set(this.#firestoreDatabase.collection(this.roomId, this.id, 'locations').doc(), {
                 lat,
                 lng,
-                time: serverTimestamp()
+                time: FieldValue.serverTimestamp()
             });
         });
         this.ws.send(JSON.stringify({
