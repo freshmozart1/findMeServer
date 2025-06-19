@@ -1,19 +1,9 @@
 import {
-    collection,
-    doc,
     CollectionReference,
     DocumentReference,
     Firestore,
-    runTransaction,
-    serverTimestamp,
-    onSnapshot,
-    getDocs,
-    query,
-    limit,
-    writeBatch,
-    getDoc
-} from 'firebase/firestore';
-
+    FieldValue
+} from 'firebase-admin/firestore';
 
 import {
     LatitudeError,
@@ -25,6 +15,7 @@ import {
     WebSocketError
 } from '../server/errors.mjs';
 import { WebSocket } from 'ws';
+import { runTransaction } from 'firebase/firestore';
 
 export class RoomMember {
     /**
@@ -90,7 +81,7 @@ export class RoomMember {
      */
     get roomRef() {
         if (!this.roomId) throw new RoomIdError();
-        return collection(this.#firestoreDatabase, this.roomId);
+        return this.#firestoreDatabase.collection(this.roomId);
     }
 
     /**
@@ -101,17 +92,8 @@ export class RoomMember {
      */
     get ref() {
         if (!this.roomId) throw new RoomIdError();
-        if (this.id) return doc(this.roomRef, this.id);
-        else return doc(this.roomRef);
-    }
-
-    /**
-     * The collection reference for the room member's locations.
-     * @type {CollectionReference}
-     * @memberof RoomMember
-     */
-    get locationRef() {
-        return collection(this.#firestoreDatabase, this.roomId, this.id, 'locations');
+        if (this.id) return this.#firestoreDatabase.doc(`${this.roomId}/${this.id}`);
+        else return this.#firestoreDatabase.collection(this.roomId).doc();
     }
 
     /**
@@ -140,14 +122,14 @@ export class RoomMember {
      * @throws If the collection reference is not provided
      * @throws If the batch size is less than 1 or greater than 500
      */
-    async #deleteCollectionDocuments(batchSize = 100) {
+    async #deleteLocations(batchSize = 100) {
         if (batchSize < 1 || batchSize > 500) throw new Error('Batch size must be between 1 and 500');
 
         // eslint-disable-next-line no-constant-condition
         while (true) {
-            const snapshot = await getDocs(query(this.locationRef, limit(batchSize)));
+            const snapshot = await this.#firestoreDatabase.collection(this.roomId).doc(this.id).collection('locations').limit(batchSize).get();
             if (snapshot.empty) break;
-            const batch = writeBatch(this.#firestoreDatabase);
+            const batch = this.#firestoreDatabase.batch();
             snapshot.docs.forEach(location => batch.delete(location.ref));
             await batch.commit();
             if (snapshot.size < batchSize) break;
@@ -164,13 +146,13 @@ export class RoomMember {
     async leaveRoom() {
         if (!this.roomId) throw new Error('User is not in a room');
         if (!this.id) throw new Error('User ID is not set');
-        const infoRef = doc(this.roomRef, 'info');
+        const infoRef = this.#firestoreDatabase.collection(this.roomId).doc('info');
         Object.values(this.locationUnsubscribeMap).forEach(unsubscribe => unsubscribe());
         if (this.roomUnsubscribe) this.roomUnsubscribe();
-        await runTransaction(this.#firestoreDatabase, async transaction => {
+        await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
             if (!infoDoc.exists()) throw new Error('Room does not exist');
-            this.#deleteCollectionDocuments();
+            this.#deleteLocations();
             const memberCount = infoDoc.data().memberCount;
             if (memberCount <= 1) {
                 transaction.delete(infoRef);
@@ -207,20 +189,20 @@ export class RoomMember {
         if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
         if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
         this.roomId = roomId;
-        const infoRef = doc(this.roomRef, 'info');
-        await runTransaction(this.#firestoreDatabase, async transaction => {
+        const infoRef = this.#firestoreDatabase.collection(this.roomId).doc('info');
+        await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
             if (!infoDoc.exists()) throw new Error('Room does not exist');
             transaction.update(infoRef, { memberCount: infoDoc.data().memberCount + 1 });
-            const clientFields = { joinedAt: serverTimestamp(), lost: false };
+            const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
             this.id = this.ref.id;
             transaction.set(this.ref, clientFields);
             this.roomUnsubscribe = await this.#createRoomSnapshotListener();
-            transaction.set(doc(collection(this.#firestoreDatabase, this.roomId, this.id, 'locations')), {
+            transaction.set(this.#firestoreDatabase.collection(this.roomId, this.id, 'locations').ddoc(), {
                 lat,
                 lng,
-                time: serverTimestamp()
-            });
+                time: FieldValue.serverTimestamp()
+            })
         });
     }
 
@@ -270,22 +252,24 @@ export class RoomMember {
      * @returns {Promise<Unsubscribe>}
      */
     async #createRoomSnapshotListener() {
-        return onSnapshot(this.roomRef, snap => {
+        return this.#firestoreDatabase.collection(this.roomId).onSnapshot(snap => {
             snap.docChanges().forEach(({ type, doc }) => {
                 if (type === 'added' && doc.id !== this.id && doc.id !== 'info') {
-                    this.locationUnsubscribeMap[doc.id] = onSnapshot(collection(this.#firestoreDatabase, this.roomId, doc.id, 'locations'), locSnap => locSnap.docChanges().forEach(({ type: lType, doc: lDoc }) => {
-                        if (lType === 'added') {
-                            const { lat, lng, time } = lDoc.data();
-                            this.ws.send(JSON.stringify({
-                                type: 'location',
-                                roomId: this.roomId,
-                                userId: doc.id,
-                                lat,
-                                lng,
-                                time
-                            }));
-                        }
-                    }));
+                    this.locationUnsubscribeMap[doc.id] = this.#firestoreDatabase.collection(this.roomId, doc.id, 'locations').onSnapshot(locSnap => {
+                        locSnap.docChanges().forEach(({ type: lType, doc: lDoc }) => {
+                            if (lType === 'added') {
+                                const { lat, lng, time } = lDoc.data();
+                                this.ws.send(JSON.stringify({
+                                    type: 'location',
+                                    roomId: this.roomId,
+                                    userId: doc.id,
+                                    lat,
+                                    lng,
+                                    time
+                                }));
+                            }
+                        });
+                    });
                 } else if (type === 'removed' && doc.id !== 'info') {
                     if (doc.id !== this.id) {
                         this.locationUnsubscribeMap[doc.id]();
