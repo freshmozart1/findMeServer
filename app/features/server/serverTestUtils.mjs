@@ -4,47 +4,28 @@ import { getFirestore, Firestore } from "firebase-admin/firestore";
 import { initializeApp } from "firebase-admin/app";
 import admin from "firebase-admin";
 import serviceAccount from "../../../firebase.secret.json" assert { type: "json" };
-import { RoomMember } from "../room/roomMember.mjs";
 
-
-// initializeApp({
-//     credential: admin.credential.cert(serviceAccount)
-// });
-// const database = getFirestore(undefined, 'findme-db');
-
-// export async function userInRoom(roomId, userId) {
-//     return (await getDoc(doc(database, roomId, userId))).exists();
-// }
-
+initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
 
 export const test = baseTest.extend({
-    /** @type {TestWebSocket} */
+    /** @type {TestServer} */
     websocket: async ({ }, use) => {
-        const websocket = new TestWebSocket('ws://localhost:8080');
+        const websocket = new TestServer('ws://localhost:8080');
         await websocket.waitUntil('open');
         await use(websocket);
         websocket.close();
     },
     /** @type {Firestore} */
     database: async ({ }, use) => {
-        initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
         await use(getFirestore(undefined, 'findme-db'));
-    },
-    /** @type {RoomMember} */
-    roomOpener: async ({ database }, use) => {
-        const websocket = new TestWebSocket('ws://localhost:8080');
-        await websocket.waitUntil('open');
-        const roomMember = new RoomMember(database, websocket);
-        await roomMember.createRoom(0, 0);
-        // await use(roomMember);
     }
 });
 
-export class TestWebSocket extends WebSocket {
+export class TestServer extends WebSocket {
     /**
-     * Creates a TestWebSocket for testing a WebSocket server, initializing it with the specified URL and options.
+     * Creates a TestServer for testing a WebSocket server, initializing it with the specified URL and options.
      * Extends the parent WebSocket class, ensuring that the connection does not reject unauthorized SSL certificates.
      *
      * @param {string} url - The URL to connect to.
