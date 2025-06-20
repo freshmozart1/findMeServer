@@ -1,6 +1,4 @@
 import {
-    CollectionReference,
-    DocumentReference,
     Firestore,
     FieldValue
 } from 'firebase-admin/firestore';
@@ -15,7 +13,6 @@ import {
     WebSocketError
 } from '../server/errors.mjs';
 import { WebSocket } from 'ws';
-import { runTransaction } from 'firebase/firestore';
 
 export class RoomMember {
     /**
@@ -74,29 +71,6 @@ export class RoomMember {
     id;
 
     /**
-     * The collection reference for the room this member belongs to.
-     * @type {CollectionReference}
-     * @memberof RoomMember
-     * @throws {RoomIdError} If roomId is not set
-     */
-    get roomRef() {
-        if (!this.roomId) throw new RoomIdError();
-        return this.#firestoreDatabase.collection(this.roomId);
-    }
-
-    /**
-     * The document reference for the room member's specific document.
-     * @type {DocumentReference}
-     * @memberof RoomMember
-     * @throws {RoomIdError} If roomId is not set
-     */
-    get ref() {
-        if (!this.roomId) throw new RoomIdError();
-        if (this.id) return this.#firestoreDatabase.doc(`${this.roomId}/${this.id}`);
-        else return this.#firestoreDatabase.collection(this.roomId).doc();
-    }
-
-    /**
      * Creates an instance of RoomMember.
      * @param {Firestore} firestoreDatabase 
      * @param {WebSocket} webSocket
@@ -111,7 +85,7 @@ export class RoomMember {
         this.id = undefined;
         this.roomUnsubscribe = undefined;
         this.locationUnsubscribeMap = {};
-        this.heartbeatTimeout = undefined;
+        this.checkAlive();
     }
 
     /**
@@ -127,7 +101,7 @@ export class RoomMember {
 
         // eslint-disable-next-line no-constant-condition
         while (true) {
-            const snapshot = await this.#firestoreDatabase.collection(this.roomId).doc(this.id).collection('locations').limit(batchSize).get();
+            const snapshot = await this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).limit(batchSize).get();
             if (snapshot.empty) break;
             const batch = this.#firestoreDatabase.batch();
             snapshot.docs.forEach(location => batch.delete(location.ref));
@@ -144,14 +118,13 @@ export class RoomMember {
      * @memberof RoomMember
      */
     async leaveRoom() {
-        if (!this.roomId) throw new Error('User is not in a room');
-        if (!this.id) throw new Error('User ID is not set');
-        const infoRef = this.#firestoreDatabase.collection(this.roomId).doc('info');
+        if (!this.roomId || !this.id) return;
+        const infoRef = this.#firestoreDatabase.doc(`${this.roomId}/info`);
         Object.values(this.locationUnsubscribeMap).forEach(unsubscribe => unsubscribe());
         if (this.roomUnsubscribe) this.roomUnsubscribe();
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
-            if (!infoDoc.exists()) throw new Error('Room does not exist');
+            if (!infoDoc.exists) throw new Error('Room does not exist');
             this.#deleteLocations();
             const memberCount = infoDoc.data().memberCount;
             if (memberCount <= 1) {
@@ -159,7 +132,7 @@ export class RoomMember {
             } else {
                 transaction.update(infoRef, { memberCount: memberCount - 1 });
             }
-            transaction.delete(this.ref);
+            transaction.delete(this.#firestoreDatabase.doc(`${this.roomId}/${this.id}`));
         });
         this.ws.send(JSON.stringify({
             type: 'left',
@@ -189,16 +162,17 @@ export class RoomMember {
         if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
         if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
         this.roomId = roomId;
-        const infoRef = this.#firestoreDatabase.collection(this.roomId).doc('info');
+        const infoRef = this.#firestoreDatabase.doc(`${this.roomId}/info`);
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
             if (!infoDoc.exists) throw new Error('Room does not exist');
             transaction.update(infoRef, { memberCount: infoDoc.data().memberCount + 1 });
             const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
-            this.id = this.ref.id;
-            transaction.set(this.ref, clientFields);
+            const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
+            transaction.set(memberDoc, clientFields);
+            this.id = memberDoc.id;
             this.roomUnsubscribe = await this.#createRoomSnapshotListener();
-            transaction.set(this.#firestoreDatabase.collection(this.roomId, this.id, 'locations').ddoc(), {
+            transaction.set(this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc(), {
                 lat,
                 lng,
                 time: FieldValue.serverTimestamp()
@@ -222,17 +196,18 @@ export class RoomMember {
         await this.#firestoreDatabase.runTransaction(async transaction => {
             while (!success && attempts < 10) {
                 this.roomId = Array.from({ length: 4 }, () => alphanumericCharacters[Math.floor(Math.random() * alphanumericCharacters.length)]).join('');
-                infoDoc = await transaction.get(this.#firestoreDatabase.collection(this.roomId).doc('info'));
+                infoDoc = await transaction.get(this.#firestoreDatabase.doc(`${this.roomId}/info`));
                 success = !infoDoc.exists;
                 attempts++;
             }
             if (!success) throw new Error('Failed to create room after 10 attempts');
             transaction.set(infoDoc.ref, { createdAt: FieldValue.serverTimestamp(), memberCount: 1 });
             const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
-            this.id = this.ref.id;
-            transaction.set(this.ref, clientFields);
+            const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
+            transaction.set(memberDoc, clientFields);
+            this.id = memberDoc.id;
             this.roomUnsubscribe = await this.#createRoomSnapshotListener();
-            transaction.set(this.#firestoreDatabase.collection(this.roomId, this.id, 'locations').doc(), {
+            transaction.set(this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc(), {
                 lat,
                 lng,
                 time: FieldValue.serverTimestamp()
@@ -254,8 +229,9 @@ export class RoomMember {
     async #createRoomSnapshotListener() {
         return this.#firestoreDatabase.collection(this.roomId).onSnapshot(snap => {
             snap.docChanges().forEach(({ type, doc }) => {
+                console.log('Changed doc: ', doc.data());
                 if (type === 'added' && doc.id !== this.id && doc.id !== 'info') {
-                    this.locationUnsubscribeMap[doc.id] = this.#firestoreDatabase.collection(this.roomId, doc.id, 'locations').onSnapshot(locSnap => {
+                    this.locationUnsubscribeMap[doc.id] = this.#firestoreDatabase.collection(`${this.roomId}/${doc.id}/locations}`).onSnapshot(locSnap => {
                         locSnap.docChanges().forEach(({ type: lType, doc: lDoc }) => {
                             if (lType === 'added') {
                                 const { lat, lng, time } = lDoc.data();
@@ -279,11 +255,17 @@ export class RoomMember {
                         type: 'left',
                         userId: doc.id
                     }));
-                } else if (type === 'modified' && doc.id !== this.id && doc.id !== 'info' && doc.data().lost) this.ws.send(JSON.stringify({
-                    type: 'lost',
-                    userId: doc.id
-                }));
+                }
             });
         });
+    }
+
+    checkAlive() {
+        this.ws.send(JSON.stringify({ type: 'ping' }));
+        clearTimeout(this.heartbeatTimeout);
+        this.heartbeatTimeout = setTimeout(async () => {
+            await this.leaveRoom();
+            this.ws.terminate();
+        }, 30000);
     }
 }
