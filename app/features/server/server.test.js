@@ -1,11 +1,12 @@
 import { describe, expect, vi } from "vitest";
 import { test } from "./serverTestUtils.mjs";
 import { RoomMember } from "../room/roomMember.mjs";
+import { Timestamp } from "firebase-admin/firestore";
 
 describe('server.mjs', () => {
-test('Client should open a WebSocket connection', ({ websocket }) => {
-    expect(websocket.readyState).toBe(websocket.OPEN);
-});
+    test('Client should open a WebSocket connection', ({ websocket }) => {
+        expect(websocket.readyState).toBe(websocket.OPEN);
+    });
 
     test('should respond with a ping upon a pong', async ({ websocket }) => {
         await new Promise((resolve) => {
@@ -27,26 +28,44 @@ test('Client should open a WebSocket connection', ({ websocket }) => {
 
 describe("RoomMember.mjs", () => {
 
+    test('should create a room with the correct data', async ({ database }) => {
+        let parsedMessage = null;
+        const roomOpener = new RoomMember(database, {
+            send: async (message) => {
+                parsedMessage = JSON.parse(message);
+            }, terminate: vi.fn()
+        });
+        await roomOpener.createRoom(0, 0);
+        await expect.poll(() => parsedMessage, { timeout: 3000, interval: 1000 }).toEqual({
+            type: 'created',
+            roomId: roomOpener.roomId,
+            userId: roomOpener.id
+        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+            exists: true
+        });
+        const location = (await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs[0].data();
+        expect(location).toEqual({
+            lat: 0,
+            lng: 0,
+            time: expect.any(Timestamp)
+        });
+    });
+
     test('Remove member from room after 30s of inactivity', { timeout: 32000 }, async ({ database }) => {
-        await new Promise(async (resolve, reject) => {
-            const roomOpener = new RoomMember(database, {
-                send: async (message) => {
-                    const parsedMessage = JSON.parse(message);
-                    if (parsedMessage.type === 'left') {
-                        try {
-                            expect(parsedMessage).toEqual({
-                                type: 'left',
-                                userId: expect.any(String)
-                            });
-                            expect(((await database.doc(`${roomOpener.roomId}/${parsedMessage.userId}`).get()).exists)).toBeFalsy();
-                            resolve();
-                        } catch (err) {
-                            reject(err);
-                        }
-                    }
-                }, terminate: vi.fn()
-            });
-            await roomOpener.createRoom(0, 0);
+        let parsedMessage = null;
+        const roomOpener = new RoomMember(database, {
+            send: (message) => {
+                parsedMessage = JSON.parse(message);
+            }, terminate: vi.fn()
+        });
+        await roomOpener.createRoom(0, 0);
+        await expect.poll(() => parsedMessage, { timeout: 32000, interval: 1000 }).toEqual({
+            type: 'left',
+            userId: roomOpener.id
+        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+            exists: false
         });
     });
 });
