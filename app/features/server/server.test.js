@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, onTestFinished } from "vitest";
-import { test, userInRoom } from "./serverTestUtils.mjs";
+import { describe, expect, vi } from "vitest";
+import { test } from "./serverTestUtils.mjs";
+import { Timestamp } from "firebase-admin/firestore";
+import { RoomMember } from "../room/roomMember.mjs";
 
-describe("Test WebSocket Server connection", () => {
-    test('should open a WebSocket connection', ({ websocket }) => {
-        expect(websocket.readyState).toBe(websocket.OPEN);
-    });
+test('Client should open a WebSocket connection', ({ websocket }) => {
+    expect(websocket.readyState).toBe(websocket.OPEN);
+});
 
+describe("Server", () => {
     test('should respond with a ping upon a pong', async ({ websocket }) => {
         await new Promise((resolve) => {
             let pingCount = 0;
@@ -23,21 +25,26 @@ describe("Test WebSocket Server connection", () => {
         });
     });
 
-    test('should respond with a created message upon a create message', async ({ websocket }) => {
-        await new Promise((resolve, reject) => {
-            const createdListener = async ({ data }) => {
-                const message = JSON.parse(data);
-                expect(message).toBeDefined();
-                if (message.type === 'ping') return;
-                if (message.type === 'created') {
-                    expect(message).toEqual({ type: 'created', roomId: expect.any(String), userId: expect.any(String) });
-                    await expect(userInRoom(message.roomId, message.userId)).resolves.toBeTruthy();
-                    websocket.removeEventListener('message', createdListener);
-                    resolve();
-                } else reject(new Error(`Unexpected message type: ${message.type}`));
-            };
-            websocket.addEventListener('message', createdListener);
-            websocket.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+    test('Remove member from room after 30s of inactivity', { timeout: 32000 }, async ({ database }) => {
+        await new Promise(async (resolve, reject) => {
+            const roomOpener = new RoomMember(database, {
+                send: async (message) => {
+                    const parsedMessage = JSON.parse(message);
+                    if (parsedMessage.type === 'left') {
+                        try {
+                            expect(parsedMessage).toEqual({
+                                type: 'left',
+                                userId: expect.any(String)
+                            });
+                            expect(((await database.doc(`${roomOpener.roomId}/${parsedMessage.userId}`).get()).exists)).toBeFalsy();
+                            resolve();
+                        } catch (err) {
+                            reject(err);
+                        }
+                    }
+                }, terminate: vi.fn()
+            });
+            await roomOpener.createRoom(0, 0);
         });
     });
 });
