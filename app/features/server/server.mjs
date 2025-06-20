@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { Firestore, getFirestore } from "firebase-admin/firestore";
-import { DatabaseNotInitializedError, MessageError, MessageTypeRequiredError, WebSocketError } from "./errors.mjs";
+import { MessageError, MessageTypeRequiredError, WebSocketError } from "./errors.mjs";
 import { RoomMember } from "../room/roomMember.mjs";
 import { initializeApp } from "firebase-admin/app";
 import { createRequire } from "module";
@@ -39,7 +39,6 @@ export class FindMeServer extends WebSocketServer {
         this.on('connection', (ws) => {
             if (!ws) throw new WebSocketError();
             const roomMember = new RoomMember(this.#firestoreDatabase, ws);
-            this.#checkAlive(roomMember);
             ws.on('message', async message => {
                 try {
                     if (!message) throw new MessageError();
@@ -48,7 +47,8 @@ export class FindMeServer extends WebSocketServer {
                     const { type: messageType, lat, lng, roomId } = jsonMessage;
                     if (!messageType) throw new MessageTypeRequiredError();
                     switch (messageType) {
-                        case 'pong': this.#checkAlive(roomMember); break;
+                        case 'pong': roomMember.checkAlive();
+                            break;
                         case 'create':
                             await roomMember.createRoom(lat, lng);
                             break;
@@ -61,39 +61,11 @@ export class FindMeServer extends WebSocketServer {
                 catch (error) {
                     this.#onLog(`Error processing message: ${error.message ?? 'Unknown error'}`);
                     this.#onLog(error.stack ?? 'No stack trace');
-                    if (roomMember.roomId && roomMember.id) {
-                        await roomMember.leaveRoom();
-                    }
+                    await roomMember.leaveRoom();
                     clearTimeout(roomMember.heartbeatTimeout);
                     ws.close(1011, error.message ?? 'Unknown error');
                 }
             });
-            ws.on('close', async () => {
-                if (roomMember.roomId && roomMember.id) {
-                    await roomMember.leaveRoom();
-                }
-                clearTimeout(roomMember.heartbeatTimeout);
-            });
         });
-    }
-
-    /**
-     * Checks if the WebSocket connection is alive by sending a ping message.
-     * @param {RoomMember} roomMember The WebSocket connection to check
-     */
-    #checkAlive(roomMember) {
-        roomMember.ws.send(JSON.stringify({ type: "ping" }));
-        clearTimeout(roomMember.heartbeatTimeout);
-        roomMember.heartbeatTimeout = setTimeout(async () => {
-            if (roomMember.roomId && roomMember.id) {
-                if (!this.#firestoreDatabase) throw new DatabaseNotInitializedError();
-                await this.#firestoreDatabase.runTransaction(async transaction => {
-                    if ((await transaction.get(roomMember.ref)).exists()) {
-                        transaction.update(roomMember.ref, { lost: true });
-                    }
-                });
-            }
-            roomMember.ws.terminate();
-        }, 30000);
     }
 }
