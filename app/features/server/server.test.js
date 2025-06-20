@@ -1,13 +1,12 @@
 import { describe, expect, vi } from "vitest";
 import { test } from "./serverTestUtils.mjs";
-import { Timestamp } from "firebase-admin/firestore";
 import { RoomMember } from "../room/roomMember.mjs";
 
+describe('server.mjs', () => {
 test('Client should open a WebSocket connection', ({ websocket }) => {
     expect(websocket.readyState).toBe(websocket.OPEN);
 });
 
-describe("Server", () => {
     test('should respond with a ping upon a pong', async ({ websocket }) => {
         await new Promise((resolve) => {
             let pingCount = 0;
@@ -24,6 +23,9 @@ describe("Server", () => {
             websocket.send(JSON.stringify({ type: 'pong' }));
         });
     });
+});
+
+describe("RoomMember.mjs", () => {
 
     test('Remove member from room after 30s of inactivity', { timeout: 32000 }, async ({ database }) => {
         await new Promise(async (resolve, reject) => {
