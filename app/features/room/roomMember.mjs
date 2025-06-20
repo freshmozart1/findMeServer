@@ -229,7 +229,6 @@ export class RoomMember {
     async #createRoomSnapshotListener() {
         return this.#firestoreDatabase.collection(this.roomId).onSnapshot(snap => {
             snap.docChanges().forEach(({ type, doc }) => {
-                console.log('Changed doc: ', doc.data());
                 if (type === 'added' && doc.id !== this.id && doc.id !== 'info') {
                     this.locationUnsubscribeMap[doc.id] = this.#firestoreDatabase.collection(`${this.roomId}/${doc.id}/locations}`).onSnapshot(locSnap => {
                         locSnap.docChanges().forEach(({ type: lType, doc: lDoc }) => {
