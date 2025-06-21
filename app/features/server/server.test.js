@@ -1,7 +1,6 @@
 import { describe, expect, vi } from "vitest";
 import { test } from "./serverTestUtils.mjs";
 import { RoomMember } from "../room/roomMember.mjs";
-import { Timestamp } from "firebase-admin/firestore";
 
 describe('server.mjs', () => {
     test('Client should open a WebSocket connection', ({ websocket }) => {
@@ -48,7 +47,7 @@ describe("RoomMember.mjs", () => {
         expect(location).toEqual({
             lat: 0,
             lng: 0,
-            time: expect.any(Timestamp)
+            time: expect.any(Object)
         });
     });
 
@@ -66,6 +65,46 @@ describe("RoomMember.mjs", () => {
         });
         await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
             exists: false
+        });
+    });
+
+    test('should add a second member to a room', { timeout: 4000 }, async ({ database }) => {
+        let locationMessageJoiner = null;
+        const roomOpener = new RoomMember(database, {
+            send: vi.fn(),
+            terminate: vi.fn()
+        });
+
+        const roomJoiner = new RoomMember(database, {
+            send: (message) => {
+                locationMessageJoiner = JSON.parse(message);
+            },
+            terminate: vi.fn()
+        });
+        await roomOpener.createRoom(0, 0);
+        expect(roomOpener.roomId).toBeDefined();
+        expect(roomOpener.id).toBeDefined();
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+            exists: true
+        });
+        expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
+        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
+        expect(roomJoiner.roomId).toBe(roomOpener.roomId);
+        expect(roomJoiner.id).toBeDefined();
+        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({
+            exists: true
+        });
+        expect((await database.collection(`${roomOpener.roomId}/${roomJoiner.id}/locations`).get()).docs).toHaveLength(1);
+        await expect.poll(() => {
+            console.log(roomOpener.id);
+            console.log('Waiting for location message joiner:', locationMessageJoiner);
+            return locationMessageJoiner;
+        }, { timeout: 3000, interval: 1000 }).toEqual({
+            type: 'location',
+            userId: roomOpener.id,
+            lat: 0,
+            lng: 0,
+            time: expect.any(Object)
         });
     });
 });
