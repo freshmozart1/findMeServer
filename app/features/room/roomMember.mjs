@@ -49,14 +49,6 @@ export class RoomMember {
     roomUnsubscribe;
 
     /**
-     * A map of unsubscribe functions for location snapshot listeners of other room members.
-     * This is used to stop listening to location changes of other room members.
-     * @type {Object.<string, Unsubscribe> | {}}
-     * @memberof RoomMember
-     */
-    locationUnsubscribeMap;
-
-    /**
      * The unique identifier for the room this member belongs to
      * @type {string}
      * @memberof RoomMember
@@ -84,7 +76,6 @@ export class RoomMember {
         this.roomId = undefined;
         this.id = undefined;
         this.roomUnsubscribe = undefined;
-        this.locationUnsubscribeMap = {};
         this.checkAlive();
     }
 
@@ -120,7 +111,6 @@ export class RoomMember {
     async leaveRoom() {
         if (!this.roomId || !this.id) return;
         const infoRef = this.#firestoreDatabase.doc(`${this.roomId}/info`);
-        Object.values(this.locationUnsubscribeMap).forEach(unsubscribe => unsubscribe());
         if (this.roomUnsubscribe) this.roomUnsubscribe();
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
@@ -138,7 +128,6 @@ export class RoomMember {
             type: 'left',
             userId: this.id
         }));
-        this.locationUnsubscribeMap = {};
         this.roomUnsubscribe = undefined;
         this.roomId = undefined;
         this.id = undefined;
@@ -163,21 +152,25 @@ export class RoomMember {
         if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
         this.roomId = roomId;
         const infoRef = this.#firestoreDatabase.doc(`${this.roomId}/info`);
-        await this.#firestoreDatabase.runTransaction(async transaction => {
-            const infoDoc = await transaction.get(infoRef);
-            if (!infoDoc.exists) throw new Error('Room does not exist');
-            transaction.update(infoRef, { memberCount: infoDoc.data().memberCount + 1 });
-            const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
-            const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
-            transaction.set(memberDoc, clientFields);
-            this.id = memberDoc.id;
-            this.roomUnsubscribe = await this.#createRoomSnapshotListener();
-            transaction.set(this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc(), {
-                lat,
-                lng,
-                time: FieldValue.serverTimestamp()
-            })
-        });
+        try {
+            await this.#firestoreDatabase.runTransaction(async transaction => {
+                const infoDoc = await transaction.get(infoRef);
+                if (!infoDoc.exists) throw new Error('Room does not exist');
+                transaction.update(infoRef, { memberCount: infoDoc.data().memberCount + 1 });
+                const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
+                const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
+                transaction.set(memberDoc, clientFields);
+                this.id = memberDoc.id;
+                transaction.set(this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc(), {
+                    lat,
+                    lng,
+                    time: FieldValue.serverTimestamp()
+                });
+            });
+        } catch (error) {
+            console.error(`Join transaction failed for user ${this.id}:`, error);
+        }
+        this.roomUnsubscribe = this.#createRoomSnapshotListener();
     }
 
     /**
@@ -206,13 +199,19 @@ export class RoomMember {
             const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
             transaction.set(memberDoc, clientFields);
             this.id = memberDoc.id;
-            this.roomUnsubscribe = await this.#createRoomSnapshotListener();
-            transaction.set(this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc(), {
+            const locDoc = this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc();
+            const locDocTime = FieldValue.serverTimestamp();
+            transaction.set(locDoc, {
                 lat,
                 lng,
-                time: FieldValue.serverTimestamp()
+                time: locDocTime
             });
+            console.log(`location added for room opener with id ${this.id} at time:`);
+            console.log(Date.now());
         });
+        const snap = await this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).get();
+        console.log('Locations after room opener transaction:', snap.size, snap.docs.map(d => d.data()));
+        this.roomUnsubscribe = this.#createRoomSnapshotListener();
         this.ws.send(JSON.stringify({
             type: 'created',
             roomId: this.roomId,
@@ -226,30 +225,19 @@ export class RoomMember {
      * @memberof RoomMember
      * @returns {Promise<Unsubscribe>}
      */
-    async #createRoomSnapshotListener() {
+    #createRoomSnapshotListener() {
         return this.#firestoreDatabase.collection(this.roomId).onSnapshot(snap => {
-            snap.docChanges().forEach(({ type, doc }) => {
+            snap.docChanges().forEach(async ({ type, doc }) => {
                 if (type === 'added' && doc.id !== this.id && doc.id !== 'info') {
-                    this.locationUnsubscribeMap[doc.id] = this.#firestoreDatabase.collection(`${this.roomId}/${doc.id}/locations}`).onSnapshot(locSnap => {
-                        locSnap.docChanges().forEach(({ type: lType, doc: lDoc }) => {
-                            if (lType === 'added') {
-                                const { lat, lng, time } = lDoc.data();
-                                this.ws.send(JSON.stringify({
-                                    type: 'location',
-                                    roomId: this.roomId,
-                                    userId: doc.id,
-                                    lat,
-                                    lng,
-                                    time
-                                }));
-                            }
-                        });
-                    });
+                    const newMemberLocation = (await doc.ref.collection('locations').orderBy('time', 'desc').limit(1).get()).docs[0].data();
+                    this.ws.send(JSON.stringify({
+                        type: 'location',
+                        userId: doc.id,
+                        lat: newMemberLocation.lat,
+                        lng: newMemberLocation.lng,
+                        time: newMemberLocation.time
+                    }));
                 } else if (type === 'removed' && doc.id !== 'info') {
-                    if (doc.id !== this.id) {
-                        this.locationUnsubscribeMap[doc.id]();
-                        delete this.locationUnsubscribeMap[doc.id];
-                    }
                     this.ws.send(JSON.stringify({
                         type: 'left',
                         userId: doc.id
