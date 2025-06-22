@@ -244,6 +244,24 @@ export class RoomMember {
         });
     }
 
+    /**
+     * Updates the location of the room member,
+     * @memberof RoomMember
+     * @returns {Promise<void>}
+     */
+    async updateLocation(lat, lng) {
+        if (!this.roomId || !this.id) throw new UserInRoomError();
+        if (lat === undefined || lat === null) throw new LatitudeRequiredError();
+        if (lng === undefined || lng === null) throw new LongitudeRequiredError();
+        if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
+        if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
+        await this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc().set({
+            lat,
+            lng,
+            time: FieldValue.serverTimestamp()
+        });
+    }
+
     checkAlive() {
         this.ws.send(JSON.stringify({ type: 'ping' }));
         clearTimeout(this.heartbeatTimeout);

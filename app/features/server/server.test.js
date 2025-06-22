@@ -173,4 +173,25 @@ describe("RoomMember.mjs", () => {
             exists: false
         });
     });
+
+    test('should update location of a member in a room', async ({ database }) => {
+        const roomOpener = new RoomMember(database, {
+            send: vi.fn(),
+            terminate: vi.fn()
+        });
+        await roomOpener.createRoom(0, 0);
+        expect(roomOpener.roomId).toBeDefined();
+        expect(roomOpener.id).toBeDefined();
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+            exists: true
+        });
+        await roomOpener.updateLocation(1, 1);
+        const location = (await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).orderBy('time', 'desc').limit(1).get());
+        expect(location.docs).toHaveLength(1);
+        expect(location.docs[0].data()).toMatchObject({
+            lat: 1,
+            lng: 1
+        });
+        await roomOpener.leaveRoom();
+    });
 });
