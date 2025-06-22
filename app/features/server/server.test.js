@@ -194,4 +194,26 @@ describe("RoomMember.mjs", () => {
         });
         await roomOpener.leaveRoom();
     });
+
+    test('should update location of a member in a room with multiple members', { timeout: 4000 }, async ({ database }) => {
+        let openerMsg = null, joinerMsg = null;
+        const roomOpener = new RoomMember(database, { send: m => openerMsg = JSON.parse(m), terminate: vi.fn() });
+        const roomJoiner = new RoomMember(database, { send: m => joinerMsg = JSON.parse(m), terminate: vi.fn() });
+
+        await roomOpener.createRoom(0, 0);
+        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
+
+        await roomOpener.updateLocation(2, 2);
+        await expect.poll(() => joinerMsg, { timeout: 2000, interval: 500 }).toEqual({
+            type: 'location', userId: roomOpener.id, lat: 2, lng: 2, time: expect.any(Object)
+        });
+
+        await roomJoiner.updateLocation(3, 3);
+        await expect.poll(() => openerMsg, { timeout: 2000, interval: 500 }).toEqual({
+            type: 'location', userId: roomJoiner.id, lat: 3, lng: 3, time: expect.any(Object)
+        });
+
+        await roomOpener.leaveRoom();
+        await roomJoiner.leaveRoom();
+    });
 });

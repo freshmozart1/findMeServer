@@ -63,6 +63,14 @@ export class RoomMember {
     id;
 
     /**
+     * A hashmap that contains all onSnapshot listeners for other room members.
+     * This is used to keep track of location changes of other members in the room.
+     * @type {Map<string, Unsubscribe>}
+     * @memberof RoomMember
+     */
+    #locationSnapshots = new Map();
+
+    /**
      * Creates an instance of RoomMember.
      * @param {Firestore} firestoreDatabase 
      * @param {WebSocket} webSocket
@@ -112,6 +120,8 @@ export class RoomMember {
         if (!this.roomId || !this.id) return;
         const infoRef = this.#firestoreDatabase.doc(`${this.roomId}/info`);
         if (this.roomUnsubscribe) this.roomUnsubscribe();
+        this.#locationSnapshots.forEach(unsubscribe => unsubscribe());
+        this.#locationSnapshots.clear();
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
             if (!infoDoc.exists) throw new Error('Room does not exist');
@@ -226,6 +236,18 @@ export class RoomMember {
         return this.#firestoreDatabase.collection(this.roomId).onSnapshot(snap => {
             snap.docChanges().forEach(async ({ type, doc }) => {
                 if (type === 'added' && doc.id !== this.id && doc.id !== 'info') {
+                    this.#locationSnapshots.set(doc.id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locationSnap => {
+                        if (!locationSnap.empty) {
+                            const newLocation = locationSnap.docs[0].data();
+                            this.ws.send(JSON.stringify({
+                                type: 'location',
+                                userId: doc.id,
+                                lat: newLocation.lat,
+                                lng: newLocation.lng,
+                                time: newLocation.time
+                            }));
+                        }
+                    }));
                     const newMemberLocation = (await doc.ref.collection('locations').orderBy('time', 'desc').limit(1).get()).docs[0].data();
                     this.ws.send(JSON.stringify({
                         type: 'location',
