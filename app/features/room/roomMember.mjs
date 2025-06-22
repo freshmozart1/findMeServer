@@ -115,7 +115,7 @@ export class RoomMember {
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
             if (!infoDoc.exists) throw new Error('Room does not exist');
-            this.#deleteLocations();
+            await this.#deleteLocations();
             const memberCount = infoDoc.data().memberCount;
             if (memberCount <= 1) {
                 transaction.delete(infoRef);
