@@ -51,6 +51,31 @@ describe("RoomMember.mjs", () => {
         });
     });
 
+    test('should remove a member from a room', { timeout: 3000 }, async ({ database }) => {
+        let parsedMessage = null;
+        const roomOpener = new RoomMember(database, {
+            send: (message) => {
+                parsedMessage = JSON.parse(message);
+            }, terminate: vi.fn()
+        });
+        await roomOpener.createRoom(0, 0);
+        expect(roomOpener.roomId).toBeDefined();
+        expect(roomOpener.id).toBeDefined();
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+            exists: true
+        });
+        expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
+        const userId = roomOpener.id; // Store userId before leaving the room
+        await roomOpener.leaveRoom();
+        await expect.poll(() => parsedMessage, { timeout: 3000, interval: 1000 }).toEqual({
+            type: 'left',
+            userId
+        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+            exists: false
+        });
+    });
+
     test('Remove member from room after 30s of inactivity', { timeout: 32000 }, async ({ database }) => {
         let parsedMessage = null;
         const roomOpener = new RoomMember(database, {
@@ -68,8 +93,8 @@ describe("RoomMember.mjs", () => {
         });
     });
 
-    test('should add a second member to a room', { timeout: 4000 }, async ({ database }) => {
-        let locationMessageJoiner = null;
+    test('should add a second member to a room', { timeout: 3000 }, async ({ database }) => {
+        let parsedMessage = null;
         const roomOpener = new RoomMember(database, {
             send: vi.fn(),
             terminate: vi.fn()
@@ -77,7 +102,7 @@ describe("RoomMember.mjs", () => {
 
         const roomJoiner = new RoomMember(database, {
             send: (message) => {
-                locationMessageJoiner = JSON.parse(message);
+                parsedMessage = JSON.parse(message);
             },
             terminate: vi.fn()
         });
@@ -95,16 +120,57 @@ describe("RoomMember.mjs", () => {
             exists: true
         });
         expect((await database.collection(`${roomOpener.roomId}/${roomJoiner.id}/locations`).get()).docs).toHaveLength(1);
-        await expect.poll(() => {
-            console.log(roomOpener.id);
-            console.log('Waiting for location message joiner:', locationMessageJoiner);
-            return locationMessageJoiner;
-        }, { timeout: 3000, interval: 1000 }).toEqual({
+        await expect.poll(() => parsedMessage, { timeout: 2000, interval: 500 }).toEqual({
             type: 'location',
             userId: roomOpener.id,
             lat: 0,
             lng: 0,
             time: expect.any(Object)
+        });
+    });
+
+    test('should remove a second member from a room', { timeout: 3000 }, async ({ database }) => {
+        let parsedMessageJoiner = null;
+        let parsedMessageOpener = null;
+        const roomOpener = new RoomMember(database, {
+            send: (message) => {
+                parsedMessageOpener = JSON.parse(message);
+            },
+            terminate: vi.fn()
+        });
+
+        const roomJoiner = new RoomMember(database, {
+            send: (message) => {
+                parsedMessageJoiner = JSON.parse(message);
+            },
+            terminate: vi.fn()
+        });
+        await roomOpener.createRoom(0, 0);
+        expect(roomOpener.roomId).toBeDefined();
+        expect(roomOpener.id).toBeDefined();
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+            exists: true
+        });
+        expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
+        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
+        expect(roomJoiner.roomId).toBe(roomOpener.roomId);
+        expect(roomJoiner.id).toBeDefined();
+        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({
+            exists: true
+        });
+        expect((await database.collection(`${roomOpener.roomId}/${roomJoiner.id}/locations`).get()).docs).toHaveLength(1);
+        const roomJoinerId = roomJoiner.id; // Store userId before leaving the room
+        await roomJoiner.leaveRoom();
+        await expect.poll(() => parsedMessageJoiner, { timeout: 2000, interval: 500 }).toEqual({
+            type: 'left',
+            userId: roomJoinerId
+        });
+        await expect.poll(() => parsedMessageOpener, { timeout: 2000, interval: 500 }).toEqual({
+            type: 'left',
+            userId: roomJoinerId
+        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomJoinerId}`).get()).resolves.toMatchObject({
+            exists: false
         });
     });
 });
