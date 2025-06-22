@@ -206,11 +206,8 @@ export class RoomMember {
                 lng,
                 time: locDocTime
             });
-            console.log(`location added for room opener with id ${this.id} at time:`);
-            console.log(Date.now());
         });
         const snap = await this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).get();
-        console.log('Locations after room opener transaction:', snap.size, snap.docs.map(d => d.data()));
         this.roomUnsubscribe = this.#createRoomSnapshotListener();
         this.ws.send(JSON.stringify({
             type: 'created',
