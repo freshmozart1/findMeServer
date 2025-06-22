@@ -12,6 +12,10 @@ initializeApp({
 });
 
 /**
+ * @todo #1
+ */
+
+/**
  * The FindMeServer class extends the WebSocketServer class to create a WebSocket server for the FindMe web app.
  * It initializes the server with the provided Firebase app and Firestore database.
  * @extends {WebSocketServer}
