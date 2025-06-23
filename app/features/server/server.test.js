@@ -137,6 +137,7 @@ describe("RoomMember.mjs", () => {
         await expect.poll(() => joinerMsg, { timeout: 2000, interval: 500 }).toEqual({ type: 'left', userId: roomJoinerId });
         await expect.poll(() => openerMsg, { timeout: 2000, interval: 500 }).toEqual({ type: 'left', userId: roomJoinerId });
         await expect(database.doc(`${roomOpener.roomId}/${roomJoinerId}`).get()).resolves.toMatchObject({ exists: false });
+        await roomOpener.leaveRoom();
     });
 
     test('should update location of a member in a room', async ({ database }) => {
