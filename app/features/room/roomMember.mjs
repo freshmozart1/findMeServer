@@ -1,6 +1,7 @@
 import {
     Firestore,
-    FieldValue
+    FieldValue,
+    GeoPoint
 } from 'firebase-admin/firestore';
 
 import {
@@ -204,7 +205,7 @@ export class RoomMember {
                 attempts++;
             }
             if (!success) throw new Error('Failed to create room after 10 attempts');
-            transaction.set(infoDoc.ref, { createdAt: FieldValue.serverTimestamp(), memberCount: 1 });
+            transaction.set(infoDoc.ref, { createdAt: FieldValue.serverTimestamp(), memberCount: 1, meetingPoint: null });
             const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
             const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
             transaction.set(memberDoc, clientFields);
@@ -225,7 +226,16 @@ export class RoomMember {
             userId: this.id
         }));
     }
-
+    updateMeetingPoint(lat, lng) {
+        if (!this.roomId) throw new RoomIdError();
+        if (lat === undefined || lat === null) throw new LatitudeRequiredError();
+        if (lng === undefined || lng === null) throw new LongitudeRequiredError();
+        if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
+        if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
+        return this.#firestoreDatabase.doc(`${this.roomId}/info`).update({
+            meetingPoint: new GeoPoint(lat, lng)
+        });
+    }
     /**
      * Creates a snapshot listener for the room this member belongs to.
      * @private

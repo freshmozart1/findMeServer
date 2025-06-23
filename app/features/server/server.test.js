@@ -1,6 +1,8 @@
 import { describe, expect, vi } from "vitest";
 import { test } from "./serverTestUtils.mjs";
 import { RoomMember } from "../room/roomMember.mjs";
+import { database } from "firebase-admin";
+import { GeoPoint } from "firebase-admin/firestore";
 
 describe('server.mjs', () => {
     test('Client should open a WebSocket connection', ({ websocket }) => {
@@ -178,5 +180,16 @@ describe("RoomMember.mjs", () => {
 
         await roomOpener.leaveRoom();
         await roomJoiner.leaveRoom();
+    });
+
+    test('should update meeting point', async ({ database }) => {
+        const roomOpener = new RoomMember(database, { send: vi.fn(), terminate: vi.fn() });
+        await roomOpener.createRoom(0, 0);
+        await roomOpener.updateMeetingPoint(1, 1);
+        const infoDoc = await database.doc(`${roomOpener.roomId}/info`).get();
+        expect(infoDoc.data()).toMatchObject({
+            meetingPoint: new GeoPoint(1, 1)
+        });
+        await roomOpener.leaveRoom();
     });
 });
