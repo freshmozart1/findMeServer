@@ -193,4 +193,23 @@ describe("RoomMember.mjs", () => {
         });
         await roomOpener.leaveRoom();
     });
+
+    test('should propose meeting point', async ({ database }) => {
+        let openerMsg = null;
+        const roomOpener = new RoomMember(database, { send: m => openerMsg = JSON.parse(m), terminate: vi.fn() });
+        await roomOpener.createRoom(0, 0);
+        await roomOpener.proposeMeetingPoint(1, 1);
+        await expect.poll(() => {
+            console.log(openerMsg);
+            return openerMsg;
+        }, { timeout: 2000, interval: 500 }).toEqual({
+            type: 'info',
+            memberCount: 1,
+            meetingPoint: null,
+            proposedMeetingPoint: new GeoPoint(1, 1)
+        });
+        const infoDoc = await database.doc(`${roomOpener.roomId}/info`).get();
+        expect(infoDoc.data().proposedMeetingPoint).toEqual(new GeoPoint(1, 1));
+        await roomOpener.leaveRoom();
+    });
 });
