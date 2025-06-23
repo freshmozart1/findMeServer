@@ -27,28 +27,21 @@ describe('server.mjs', () => {
 
 describe("RoomMember.mjs", () => {
 
-    test('should create a room with the correct data', async ({ database }) => {
-        let parsedMessage = null;
+    test('should create a room with correct data', async ({ database }) => {
+        let msg = null;
         const roomOpener = new RoomMember(database, {
-            send: async (message) => {
-                parsedMessage = JSON.parse(message);
-            }, terminate: vi.fn()
+            send: m => msg = JSON.parse(m), terminate: vi.fn()
         });
         await roomOpener.createRoom(0, 0);
-        await expect.poll(() => parsedMessage, { timeout: 3000, interval: 1000 }).toEqual({
+        await expect.poll(() => msg, { timeout: 3000, interval: 1000 }).toEqual({
             type: 'created',
             roomId: roomOpener.roomId,
             userId: roomOpener.id
         });
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
-            exists: true
-        });
-        const location = (await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs[0].data();
-        expect(location).toEqual({
-            lat: 0,
-            lng: 0,
-            time: expect.any(Object)
-        });
+        const doc = await database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get();
+        expect(doc).toMatchObject({ exists: true });
+        const [location] = (await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs.map(d => d.data());
+        expect(location).toMatchObject({ lat: 0, lng: 0, time: expect.any(Object) });
     });
 
     test('should remove a member from a room', { timeout: 3000 }, async ({ database }) => {
@@ -94,33 +87,23 @@ describe("RoomMember.mjs", () => {
     });
 
     test('should add a second member to a room', { timeout: 3000 }, async ({ database }) => {
-        let parsedMessage = null;
-        const roomOpener = new RoomMember(database, {
-            send: vi.fn(),
-            terminate: vi.fn()
-        });
+        let msg = null;
+        const roomOpener = new RoomMember(database, { send: vi.fn(), terminate: vi.fn() });
+        const roomJoiner = new RoomMember(database, { send: m => msg = JSON.parse(m), terminate: vi.fn() });
 
-        const roomJoiner = new RoomMember(database, {
-            send: (message) => {
-                parsedMessage = JSON.parse(message);
-            },
-            terminate: vi.fn()
-        });
         await roomOpener.createRoom(0, 0);
         expect(roomOpener.roomId).toBeDefined();
         expect(roomOpener.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
-            exists: true
-        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({ exists: true });
         expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
+
         await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
         expect(roomJoiner.roomId).toBe(roomOpener.roomId);
         expect(roomJoiner.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({
-            exists: true
-        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({ exists: true });
         expect((await database.collection(`${roomOpener.roomId}/${roomJoiner.id}/locations`).get()).docs).toHaveLength(1);
-        await expect.poll(() => parsedMessage, { timeout: 2000, interval: 500 }).toEqual({
+
+        await expect.poll(() => msg, { timeout: 2000, interval: 500 }).toEqual({
             type: 'location',
             userId: roomOpener.id,
             lat: 0,
@@ -130,48 +113,28 @@ describe("RoomMember.mjs", () => {
     });
 
     test('should remove a second member from a room', { timeout: 3000 }, async ({ database }) => {
-        let parsedMessageJoiner = null;
-        let parsedMessageOpener = null;
-        const roomOpener = new RoomMember(database, {
-            send: (message) => {
-                parsedMessageOpener = JSON.parse(message);
-            },
-            terminate: vi.fn()
-        });
+        let joinerMsg = null, openerMsg = null;
 
-        const roomJoiner = new RoomMember(database, {
-            send: (message) => {
-                parsedMessageJoiner = JSON.parse(message);
-            },
-            terminate: vi.fn()
-        });
+        const roomOpener = new RoomMember(database, { send: (msg) => openerMsg = JSON.parse(msg), terminate: vi.fn() });
+        const roomJoiner = new RoomMember(database, { send: (msg) => joinerMsg = JSON.parse(msg), terminate: vi.fn() });
+
         await roomOpener.createRoom(0, 0);
         expect(roomOpener.roomId).toBeDefined();
         expect(roomOpener.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
-            exists: true
-        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({ exists: true });
         expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
+
         await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
         expect(roomJoiner.roomId).toBe(roomOpener.roomId);
         expect(roomJoiner.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({
-            exists: true
-        });
+        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({ exists: true });
         expect((await database.collection(`${roomOpener.roomId}/${roomJoiner.id}/locations`).get()).docs).toHaveLength(1);
+
         const roomJoinerId = roomJoiner.id; // Store userId before leaving the room
         await roomJoiner.leaveRoom();
-        await expect.poll(() => parsedMessageJoiner, { timeout: 2000, interval: 500 }).toEqual({
-            type: 'left',
-            userId: roomJoinerId
-        });
-        await expect.poll(() => parsedMessageOpener, { timeout: 2000, interval: 500 }).toEqual({
-            type: 'left',
-            userId: roomJoinerId
-        });
-        await expect(database.doc(`${roomOpener.roomId}/${roomJoinerId}`).get()).resolves.toMatchObject({
-            exists: false
-        });
+        await expect.poll(() => joinerMsg, { timeout: 2000, interval: 500 }).toEqual({ type: 'left', userId: roomJoinerId });
+        await expect.poll(() => openerMsg, { timeout: 2000, interval: 500 }).toEqual({ type: 'left', userId: roomJoinerId });
+        await expect(database.doc(`${roomOpener.roomId}/${roomJoinerId}`).get()).resolves.toMatchObject({ exists: false });
     });
 
     test('should update location of a member in a room', async ({ database }) => {
