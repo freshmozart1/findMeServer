@@ -199,10 +199,7 @@ describe("RoomMember.mjs", () => {
         const roomOpener = new RoomMember(database, { send: m => openerMsg = JSON.parse(m), terminate: vi.fn() });
         await roomOpener.createRoom(0, 0);
         await roomOpener.proposeMeetingPoint(1, 1);
-        await expect.poll(() => {
-            console.log(openerMsg);
-            return openerMsg;
-        }, { timeout: 2000, interval: 500 }).toEqual({
+        await expect.poll(() => openerMsg, { timeout: 2000, interval: 500 }).toEqual({
             type: 'info',
             memberCount: 1,
             meetingPoint: null,
