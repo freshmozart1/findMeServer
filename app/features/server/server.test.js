@@ -198,7 +198,8 @@ describe("RoomMember.mjs", () => {
         let openerMsg = null;
         const roomOpener = new RoomMember(database, { send: m => openerMsg = JSON.parse(m), terminate: vi.fn() });
         await roomOpener.createRoom(0, 0);
-        await roomOpener.proposeMeetingPoint(1, 1);
+        const meetingPoint = new GeoPoint(1, 1);
+        await roomOpener.proposeMeetingPoint(meetingPoint.latitude, meetingPoint.longitude);
         await expect.poll(() => openerMsg, { timeout: 2000, interval: 500 }).toEqual({
             type: 'info',
             memberCount: 1,
@@ -206,7 +207,7 @@ describe("RoomMember.mjs", () => {
             proposedMeetingPoint: new GeoPoint(1, 1)
         });
         const infoDoc = await database.doc(`${roomOpener.roomId}/info`).get();
-        expect(infoDoc.data().proposedMeetingPoint).toEqual(new GeoPoint(1, 1));
+        expect(infoDoc.data().proposedMeetingPoint).toEqual(meetingPoint);
         await roomOpener.leaveRoom();
     });
 });
