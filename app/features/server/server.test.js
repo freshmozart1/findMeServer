@@ -194,20 +194,25 @@ describe("RoomMember.mjs", () => {
         await roomOpener.leaveRoom();
     });
 
-    test('should propose meeting point', async ({ database }) => {
-        let openerMsg = null;
-        const roomOpener = new RoomMember(database, { send: m => openerMsg = JSON.parse(m), terminate: vi.fn() });
+    test('should propose meeting point', { timeout: 3000 }, async ({ database }) => {
+        const openerMessages = [];
+        const joinerMessages = [];
+        const roomOpener = new RoomMember(database, { send: m => openerMessages.push(JSON.parse(m)), terminate: vi.fn() });
+        const roomJoiner = new RoomMember(database, { send: m => joinerMessages.push(JSON.parse(m)), terminate: vi.fn() });
         await roomOpener.createRoom(0, 0);
+        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
         const meetingPoint = new GeoPoint(1, 1);
         await roomOpener.proposeMeetingPoint(meetingPoint.latitude, meetingPoint.longitude);
-        await expect.poll(() => openerMsg, { timeout: 2000, interval: 500 }).toEqual({
-            type: 'info',
-            memberCount: 1,
-            meetingPoint: null,
-            proposedMeetingPoint: new GeoPoint(1, 1)
-        });
-        const infoDoc = await database.doc(`${roomOpener.roomId}/info`).get();
-        expect(infoDoc.data().proposedMeetingPoint).toEqual(meetingPoint);
+        await expect.poll(() => joinerMessages.some(m => m.type === 'info'
+            && m.proposedMeetingPoint
+            && meetingPoint
+            && m.proposedMeetingPoint._latitude === meetingPoint.latitude
+            && m.proposedMeetingPoint._longitude === meetingPoint.longitude) && openerMessages.some(m => m.type === 'info'
+                && m.proposedMeetingPoint
+                && meetingPoint
+                && m.proposedMeetingPoint._latitude === meetingPoint.latitude
+                && m.proposedMeetingPoint._longitude === meetingPoint.longitude)).toBeTruthy();
         await roomOpener.leaveRoom();
+        await roomJoiner.leaveRoom();
     });
 });

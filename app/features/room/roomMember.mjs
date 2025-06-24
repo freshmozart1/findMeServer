@@ -270,10 +270,11 @@ export class RoomMember {
     #createInfoDocSnapshotListener() {
         if (!this.roomId) throw new RoomIdError();
         return this.#firestoreDatabase.doc(`${this.roomId}/info`).onSnapshot(infoSnap => {
+            const data = infoSnap.data();
             if (infoSnap.exists) {
-                const data = infoSnap.data();
                 this.ws.send(JSON.stringify({
                     type: 'info',
+                    createdAt: data.createdAt,
                     memberCount: data.memberCount,
                     meetingPoint: data.meetingPoint,
                     proposedMeetingPoint: data.proposedMeetingPoint
