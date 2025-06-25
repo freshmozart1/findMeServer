@@ -1,13 +1,53 @@
 import WebSocket from "ws";
-import { test as baseTest } from "vitest";
+import { test as baseTest, vi } from "vitest";
 import { getFirestore, Firestore } from "firebase-admin/firestore";
 import { initializeApp } from "firebase-admin/app";
 import admin from "firebase-admin";
 import serviceAccount from "../../../firebase.secret.json" assert { type: "json" };
+import { RoomMember } from "../room/roomMember.mjs";
 
 initializeApp({
     credential: admin.credential.cert(serviceAccount)
 });
+
+/**
+ * @typedef {Omit<RoomMember, 'roomId'> & {
+ * getRoomId: () => string,
+ * getId: () => string,
+ * messages: any[],
+ * getDoc: () => Promise<admin.firestore.DocumentSnapshot<admin.firestore.DocumentData, admin.firestore.DocumentData>>,
+ * getLocations: () => Promise<admin.firestore.QuerySnapshot<admin.firestore.DocumentData, admin.firestore.DocumentData>> }} RoomMemberContext
+ */
+/**
+ * This function creates a RoomMember context for testing purposes.
+ * @param {Firestore} database The Firestore database instance to use for the RoomMember.
+ * @param {(context: any) => Promise<any>} use The context.
+ */
+async function createRoomMemberContext(database, use) {
+    const messages = [];
+    let left = false;
+    const roomMember = new RoomMember(database, {
+        send: m => messages.push(JSON.parse(m)),
+        terminate: vi.fn()
+    });
+    await use({
+        getRoomId: () => roomMember.roomId,
+        getId: () => roomMember.id,
+        createRoom: async (latitude, longitude) => roomMember.createRoom(latitude, longitude),
+        joinRoom: async (roomId, latitude, longitude) => roomMember.joinRoom(roomId, latitude, longitude),
+        proposeMeetingPoint: async (latitude, longitude) => roomMember.proposeMeetingPoint(latitude, longitude),
+        updateMeetingPoint: async (latitude, longitude) => roomMember.updateMeetingPoint(latitude, longitude),
+        updateLocation: async (latitude, longitude) => roomMember.updateLocation(latitude, longitude),
+        leaveRoom: async () => {
+            left = true;
+            return roomMember.leaveRoom()
+        },
+        getDoc: async () => database.doc(`${roomMember.roomId}/${roomMember.id}`).get(),
+        getLocations: async () => database.collection(`${roomMember.roomId}/${roomMember.id}/locations`).get(),
+        messages
+    });
+    if (!left) await roomMember.leaveRoom();
+}
 
 export const test = baseTest.extend({
     /** @type {TestServer} */
@@ -20,7 +60,11 @@ export const test = baseTest.extend({
     /** @type {Firestore} */
     database: async ({ }, use) => {
         await use(getFirestore(undefined, 'findme-db'));
-    }
+    },
+    /** @type {RoomMemberContext} */
+    roomOpener: async ({ database }, use) => createRoomMemberContext(database, use),
+    /** @type {RoomMemberContext} */
+    roomJoiner: async ({ database }, use) => createRoomMemberContext(database, use)
 });
 
 export class TestServer extends WebSocket {

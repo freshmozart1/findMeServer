@@ -1,7 +1,5 @@
-import { describe, expect, vi } from "vitest";
+import { describe, expect } from "vitest";
 import { test } from "./serverTestUtils.mjs";
-import { RoomMember } from "../room/roomMember.mjs";
-import { database } from "firebase-admin";
 import { GeoPoint, Timestamp } from "firebase-admin/firestore";
 
 describe('server.mjs', () => {
@@ -29,192 +27,146 @@ describe('server.mjs', () => {
 
 describe("RoomMember.mjs", () => {
 
-    test('should create a room with correct data', async ({ database }) => {
-        let messages = [];
-        const roomOpener = new RoomMember(database, { send: m => messages.push(JSON.parse(m)), terminate: vi.fn() });
+    test('should create a room with correct data', async ({ roomOpener }) => {
         const location = new GeoPoint(0, 0);
         await roomOpener.createRoom(location.latitude, location.longitude);
-        await expect.poll(() => messages).toContainEqual({
+        expect(roomOpener.getRoomId()).toBeDefined();
+        expect(roomOpener.getId()).toBeDefined();
+        await expect.poll(() => roomOpener.messages).toContainEqual({
             type: 'created',
-            roomId: roomOpener.roomId,
-            userId: roomOpener.id
+            roomId: roomOpener.getRoomId(),
+            userId: roomOpener.getId()
         });
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({ exists: true });
-        expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs.map(d => d.data()))
-            .toContainEqual({
-                lat: location.latitude,
-                lng: location.longitude,
-                time: expect.any(Timestamp)
-            });
+        const openerDoc = await roomOpener.getDoc();
+        const locations = await roomOpener.getLocations();
+        expect(openerDoc.exists).toBe(true);
+        expect(locations.docs).toHaveLength(1);
+        expect(locations.docs[0].data()).toMatchObject({
+            lat: location.latitude,
+            lng: location.longitude,
+            time: expect.any(Timestamp)
+        });
     });
 
-    test('should remove a member from a room', async ({ database }) => {
-        let messages = [];
-        const roomOpener = new RoomMember(database, {
-            send: (message) => {
-                messages.push(JSON.parse(message));
-            }, terminate: vi.fn()
-        });
+    test('should remove a member from a room', async ({ roomOpener }) => {
         await roomOpener.createRoom(0, 0);
-        expect(roomOpener.roomId).toBeDefined();
-        expect(roomOpener.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
-            exists: true
-        });
-        expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
-        const userId = roomOpener.id; // Store userId before leaving the room
+        expect(roomOpener.getRoomId()).toBeDefined();
+        expect(roomOpener.getId()).toBeDefined();
+        let openerDoc = await roomOpener.getDoc();
+        expect(openerDoc.exists).toBe(true);
+        expect((await roomOpener.getLocations()).docs).toHaveLength(1);
         await roomOpener.leaveRoom();
-        await expect.poll(() => messages).toContainEqual({
-            type: 'left',
-            userId
-        });
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
-            exists: false
-        });
+        await expect.poll(() => roomOpener.messages).toContainEqual({ type: 'left', userId: openerDoc.id });
+        openerDoc = await roomOpener.getDoc();
+        expect(openerDoc.exists).toBe(false);
     });
 
-    test('Remove member from room after 30s of inactivity', { timeout: 34000 }, async ({ database }) => {
-        let messages = [];
-        const roomOpener = new RoomMember(database, {
-            send: (message) => {
-                messages.push(JSON.parse(message));
-            }, terminate: vi.fn()
-        });
+    test('Remove member from room after 30s of inactivity', { timeout: 34000 }, async ({ roomOpener }) => {
         await roomOpener.createRoom(0, 0);
-        await expect.poll(() => messages, { timeout: 32000, interval: 1000 }).toContainEqual({
+        await expect.poll(() => roomOpener.messages, { timeout: 32000, interval: 500 }).toContainEqual({
             type: 'left',
-            userId: roomOpener.id
+            userId: roomOpener.getId()
         });
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({
+        await expect(roomOpener.getDoc()).resolves.toMatchObject({
             exists: false
         });
     });
 
-    test('should add a second member to a room', { timeout: 3000 }, async ({ database }) => {
-        let messages = [];
-        const roomOpener = new RoomMember(database, { send: vi.fn(), terminate: vi.fn() });
-        const roomJoiner = new RoomMember(database, { send: m => messages.push(JSON.parse(m)), terminate: vi.fn() });
-
+    test('should add a second member to a room', { timeout: 3000 }, async ({ roomOpener, roomJoiner }) => {
         const openerLocation = new GeoPoint(0, 0);
         await roomOpener.createRoom(openerLocation.latitude, openerLocation.longitude);
-        expect(roomOpener.roomId).toBeDefined();
-        expect(roomOpener.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({ exists: true });
-        expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
+        expect(roomOpener.getRoomId()).toBeDefined();
+        expect(roomOpener.getId()).toBeDefined();
+        const openerDoc = await roomOpener.getDoc();
+        expect(openerDoc.exists).toBe(true);
+        expect((await roomOpener.getLocations()).docs).toHaveLength(1);
 
-        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
-        expect(roomJoiner.roomId).toBe(roomOpener.roomId);
-        expect(roomJoiner.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({ exists: true });
-        expect((await database.collection(`${roomOpener.roomId}/${roomJoiner.id}/locations`).get()).docs).toHaveLength(1);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        expect(roomJoiner.getRoomId()).toBe(roomOpener.getRoomId());
+        expect(roomJoiner.getId()).toBeDefined();
+        const joinerDoc = await roomJoiner.getDoc();
+        expect(joinerDoc.exists).toBe(true);
+        expect((await roomJoiner.getLocations()).docs).toHaveLength(1);
 
-        await expect.poll(() => messages).toContainEqual({
+        await expect.poll(() => roomJoiner.messages).toContainEqual({
             type: 'location',
-            userId: roomOpener.id,
+            userId: roomOpener.getId(),
             lat: openerLocation.latitude,
             lng: openerLocation.longitude,
             time: expect.any(Object)
         });
-        await roomOpener.leaveRoom();
-        await roomJoiner.leaveRoom();
     });
 
-    test('should remove a second member from a room', async ({ database }) => {
-        let joinerMsg = [], openerMsg = [];
-
-        const roomOpener = new RoomMember(database, { send: (msg) => openerMsg.push(JSON.parse(msg)), terminate: vi.fn() });
-        const roomJoiner = new RoomMember(database, { send: (msg) => joinerMsg.push(JSON.parse(msg)), terminate: vi.fn() });
-
+    test('should remove a second member from a room', async ({ roomJoiner, roomOpener }) => {
         await roomOpener.createRoom(0, 0);
-        expect(roomOpener.roomId).toBeDefined();
-        expect(roomOpener.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({ exists: true });
-        expect((await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).get()).docs).toHaveLength(1);
-
-        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
-        expect(roomJoiner.roomId).toBe(roomOpener.roomId);
-        expect(roomJoiner.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomJoiner.id}`).get()).resolves.toMatchObject({ exists: true });
-        expect((await database.collection(`${roomOpener.roomId}/${roomJoiner.id}/locations`).get()).docs).toHaveLength(1);
-
-        const roomJoinerId = roomJoiner.id; // Store userId before leaving the room
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        const joinerDoc = await roomJoiner.getDoc();
+        expect(joinerDoc.exists).toBe(true);
+        expect((await roomJoiner.getLocations()).docs).toHaveLength(1);
         await roomJoiner.leaveRoom();
-        await expect.poll(() => joinerMsg).toContainEqual({ type: 'left', userId: roomJoinerId });
-        await expect.poll(() => openerMsg).toContainEqual({ type: 'left', userId: roomJoinerId });
-        await expect(database.doc(`${roomOpener.roomId}/${roomJoinerId}`).get()).resolves.toMatchObject({ exists: false });
-        await roomOpener.leaveRoom();
+        await expect.poll(() => roomJoiner.messages).toContainEqual({ type: 'left', userId: joinerDoc.id });
+        await expect.poll(() => roomOpener.messages).toContainEqual({ type: 'left', userId: joinerDoc.id });
+        expect((await roomJoiner.getDoc()).exists).toBeFalsy();
     });
 
-    test('should update location of a member in a room', async ({ database }) => {
-        const roomOpener = new RoomMember(database, { send: vi.fn(), terminate: vi.fn() });
+    test('should update location of a member in a room', async ({ roomOpener }) => {
         await roomOpener.createRoom(0, 0);
-
-        expect(roomOpener.roomId).toBeDefined();
-        expect(roomOpener.id).toBeDefined();
-        await expect(database.doc(`${roomOpener.roomId}/${roomOpener.id}`).get()).resolves.toMatchObject({ exists: true });
-
         const location = new GeoPoint(1, 1);
         await roomOpener.updateLocation(location.latitude, location.longitude);
-        const updatedLocation = (await database.collection(`${roomOpener.roomId}/${roomOpener.id}/locations`).orderBy('time', 'desc').limit(1).get());
-        expect(updatedLocation.docs).toHaveLength(1);
-        expect(updatedLocation.docs[0].data()).toMatchObject({
+        const locations = await roomOpener.getLocations();
+        expect(locations.docs).toHaveLength(2);
+        expect(locations.docs.map(doc => doc.data())).toContainEqual({
             lat: location.latitude,
-            lng: location.longitude
+            lng: location.longitude,
+            time: expect.any(Timestamp)
         });
-        await roomOpener.leaveRoom();
     });
 
-    test('should update location of a member in a room with multiple members', async ({ database }) => {
-        let openerMsg = [], joinerMsg = [];
-        const roomOpener = new RoomMember(database, { send: m => openerMsg.push(JSON.parse(m)), terminate: vi.fn() });
-        const roomJoiner = new RoomMember(database, { send: m => joinerMsg.push(JSON.parse(m)), terminate: vi.fn() });
-
+    test('should notify other members of a location change', async ({ roomOpener, roomJoiner }) => {
         await roomOpener.createRoom(0, 0);
-        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
 
         await roomOpener.updateLocation(2, 2);
-        await expect.poll(() => joinerMsg).toContainEqual({
-            type: 'location', userId: roomOpener.id, lat: 2, lng: 2, time: expect.any(Object)
+        await expect.poll(() => roomJoiner.messages).toContainEqual({
+            type: 'location',
+            userId: roomOpener.getId(),
+            lat: 2,
+            lng: 2,
+            time: expect.any(Object)
         });
 
         await roomJoiner.updateLocation(3, 3);
-        await expect.poll(() => openerMsg).toContainEqual({
-            type: 'location', userId: roomJoiner.id, lat: 3, lng: 3, time: expect.any(Object)
+        await expect.poll(() => roomOpener.messages).toContainEqual({
+            type: 'location',
+            userId: roomJoiner.getId(),
+            lat: 3,
+            lng: 3,
+            time: expect.any(Object)
         });
-
-        await roomOpener.leaveRoom();
-        await roomJoiner.leaveRoom();
     });
 
-    test('should update meeting point', async ({ database }) => {
-        const roomOpener = new RoomMember(database, { send: vi.fn(), terminate: vi.fn() });
+    test('should update meeting point', async ({ roomOpener, database }) => {
         await roomOpener.createRoom(0, 0);
-        await roomOpener.updateMeetingPoint(1, 1);
-        const infoDoc = await database.doc(`${roomOpener.roomId}/info`).get();
+        const meetingPoint = new GeoPoint(1, 1);
+        await roomOpener.updateMeetingPoint(meetingPoint.latitude, meetingPoint.longitude);
+        const infoDoc = await database.doc(`${roomOpener.getRoomId()}/info`).get();
         expect(infoDoc.data()).toMatchObject({
-            meetingPoint: new GeoPoint(1, 1)
+            meetingPoint
         });
-        await roomOpener.leaveRoom();
     });
 
-    test('should propose meeting point', { timeout: 3000 }, async ({ database }) => {
-        const openerMessages = [], joinerMessages = [];
-        const roomOpener = new RoomMember(database, { send: m => openerMessages.push(JSON.parse(m)), terminate: vi.fn() });
-        const roomJoiner = new RoomMember(database, { send: m => joinerMessages.push(JSON.parse(m)), terminate: vi.fn() });
+    test('should propose meeting point', { timeout: 3000 }, async ({ roomOpener, roomJoiner }) => {
         await roomOpener.createRoom(0, 0);
-        await roomJoiner.joinRoom(roomOpener.roomId, 1, 1);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
         const meetingPoint = new GeoPoint(1, 1);
         await roomOpener.proposeMeetingPoint(meetingPoint.latitude, meetingPoint.longitude);
-        await expect.poll(() => joinerMessages.some(m => m.type === 'info'
-            && m.proposedMeetingPoint
-            && meetingPoint
-            && m.proposedMeetingPoint._latitude === meetingPoint.latitude
-            && m.proposedMeetingPoint._longitude === meetingPoint.longitude) && openerMessages.some(m => m.type === 'info'
-                && m.proposedMeetingPoint
-                && meetingPoint
-                && m.proposedMeetingPoint._latitude === meetingPoint.latitude
-                && m.proposedMeetingPoint._longitude === meetingPoint.longitude)).toBeTruthy();
-        await roomOpener.leaveRoom();
-        await roomJoiner.leaveRoom();
+        await expect.poll(() => roomJoiner.messages.some(jm => jm.type === 'info'
+            && jm.proposedMeetingPoint
+            && jm.proposedMeetingPoint._latitude === meetingPoint.latitude
+            && jm.proposedMeetingPoint._longitude === meetingPoint.longitude)
+            && roomOpener.messages.some(om => om.type === 'info'
+                && om.proposedMeetingPoint
+                && om.proposedMeetingPoint._latitude === meetingPoint.latitude
+                && om.proposedMeetingPoint._longitude === meetingPoint.longitude)).toBeTruthy();
     });
 });
