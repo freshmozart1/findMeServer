@@ -33,17 +33,17 @@ async function createRoomMemberContext(database, use) {
     await use({
         getRoomId: () => roomMember.roomId,
         getId: () => roomMember.id,
-        createRoom: async (latitude, longitude) => roomMember.createRoom(latitude, longitude),
-        joinRoom: async (roomId, latitude, longitude) => roomMember.joinRoom(roomId, latitude, longitude),
-        proposeMeetingPoint: async (latitude, longitude) => roomMember.proposeMeetingPoint(latitude, longitude),
-        updateMeetingPoint: async (latitude, longitude) => roomMember.updateMeetingPoint(latitude, longitude),
-        updateLocation: async (latitude, longitude) => roomMember.updateLocation(latitude, longitude),
-        leaveRoom: async () => {
+        createRoom: (latitude, longitude) => roomMember.createRoom(latitude, longitude),
+        joinRoom: (roomId, latitude, longitude) => roomMember.joinRoom(roomId, latitude, longitude),
+        proposeMeetingPoint: (latitude, longitude) => roomMember.proposeMeetingPoint(latitude, longitude),
+        updateMeetingPoint: (latitude, longitude) => roomMember.updateMeetingPoint(latitude, longitude),
+        updateLocation: (latitude, longitude) => roomMember.updateLocation(latitude, longitude),
+        leaveRoom: () => {
             left = true;
             return roomMember.leaveRoom()
         },
-        getDoc: async () => database.doc(`${roomMember.roomId}/${roomMember.id}`).get(),
-        getLocations: async () => database.collection(`${roomMember.roomId}/${roomMember.id}/locations`).get(),
+        getDoc: () => database.doc(`${roomMember.roomId}/${roomMember.id}`).get(),
+        getLocations: () => database.collection(`${roomMember.roomId}/${roomMember.id}/locations`).get(),
         messages
     });
     if (!left) await roomMember.leaveRoom();
