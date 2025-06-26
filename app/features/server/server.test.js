@@ -3,29 +3,29 @@ import { test } from "./serverTestUtils.mjs";
 import { GeoPoint, Timestamp } from "firebase-admin/firestore";
 
 describe('server.mjs', () => {
-    test('Client should open a WebSocket connection', ({ websocket }) => {
-        expect(websocket.readyState).toBe(websocket.OPEN);
+    test('Client should open a WebSocket connection', ({ websocketOpener }) => {
+        expect(websocketOpener.readyState).toBe(websocketOpener.OPEN);
     });
 
-    test('should respond with a ping upon a pong', async ({ websocket }) => {
-        websocket.send(JSON.stringify({ type: 'pong' }));
-        await expect.poll(() => websocket.messages.filter(msg => msg.type === 'ping').length).toBeGreaterThanOrEqual(2);
+    test('should respond with a ping upon a pong', async ({ websocketOpener }) => {
+        websocketOpener.send(JSON.stringify({ type: 'pong' }));
+        await expect.poll(() => websocketOpener.messages.filter(msg => msg.type === 'ping').length).toBeGreaterThanOrEqual(2);
     });
 
-    test('should respond with a created upon a create', async ({ websocket }) => {
+    test('should respond with a created upon a create', async ({ websocketOpener }) => {
         const location = new GeoPoint(0, 0);
-        websocket.send(JSON.stringify({ type: 'create', lat: location.latitude, lng: location.longitude }));
-        await expect.poll(() => websocket.messages).toContainEqual({
+        websocketOpener.send(JSON.stringify({ type: 'create', lat: location.latitude, lng: location.longitude }));
+        await expect.poll(() => websocketOpener.messages).toContainEqual({
             type: 'created',
             roomId: expect.any(String),
             userId: expect.any(String)
         });
     });
 
-    test('should delete a room after all members left', async ({ websocket, database }) => {
-        websocket.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+    test('should delete a room after all members left', async ({ websocketOpener, database }) => {
+        websocketOpener.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
         const roomId = await new Promise(resolve => {
-            websocket.on('message', message => {
+            websocketOpener.on('message', message => {
                 const data = JSON.parse(message);
                 if (data.type === 'created') {
                     resolve(data.roomId);
@@ -33,8 +33,32 @@ describe('server.mjs', () => {
             });
         });
         expect((await database.collection(roomId).count().get()).data().count).toBe(2);
-        websocket.close();
+        websocketOpener.close();
         await expect.poll(async () => (await database.collection(roomId).count().get()).data().count).toBe(0);
+    });
+
+    test('should respond with a location if a member joins', async ({ websocketOpener, websocketJoiner }) => {
+        const location = new GeoPoint(1, 1);
+        websocketOpener.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+        const roomId = await new Promise(resolve => {
+            websocketOpener.on('message', message => {
+                const data = JSON.parse(message);
+                if (data.type === 'created') {
+                    resolve(data.roomId);
+                }
+            });
+        });
+        websocketJoiner.send(JSON.stringify({ type: 'join', roomId, lat: location.latitude, lng: location.longitude }));
+        await expect.poll(() => {
+            console.log(websocketJoiner.messages);
+            return websocketJoiner.messages;
+        }).toContainEqual({
+            type: 'location',
+            userId: expect.any(String),
+            lat: 0,
+            lng: 0,
+            time: expect.any(Object)
+        });
     });
 });
 
@@ -57,7 +81,7 @@ describe("RoomMember.mjs", () => {
         expect(locations.docs[0].data()).toMatchObject({
             lat: location.latitude,
             lng: location.longitude,
-            time: expect.any(Timestamp)
+            time: expect.any(Object)
         });
     });
 
