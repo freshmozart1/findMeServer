@@ -145,16 +145,6 @@ describe("RoomMember.mjs", () => {
         });
     });
 
-    test('should update meeting point', async ({ roomOpener, database }) => {
-        await roomOpener.createRoom(0, 0);
-        const meetingPoint = new GeoPoint(1, 1);
-        await roomOpener.updateMeetingPoint(meetingPoint.latitude, meetingPoint.longitude);
-        const infoDoc = await database.doc(`${roomOpener.getRoomId()}/info`).get();
-        expect(infoDoc.data()).toMatchObject({
-            meetingPoint
-        });
-    });
-
     test('should propose meeting point', { timeout: 3000 }, async ({ roomOpener, roomJoiner }) => {
         await roomOpener.createRoom(0, 0);
         await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);

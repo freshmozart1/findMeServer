@@ -245,23 +245,6 @@ export class RoomMember {
         });
     }
 
-    /**
-     * Updates the meeting point of the room.
-     * @param {number} lat The latitude of the meeting point
-     * @param {number} lng The longitude of the meeting point
-     * @returns {Promise<FirebaseFirestore.WriteResult>}
-     */
-    async updateMeetingPoint(lat, lng) {
-        if (!this.roomId) throw new RoomIdError();
-        if (lat === undefined || lat === null) throw new LatitudeRequiredError();
-        if (lng === undefined || lng === null) throw new LongitudeRequiredError();
-        if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
-        if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
-        return this.#firestoreDatabase.doc(`${this.roomId}/info`).update({
-            meetingPoint: new GeoPoint(lat, lng)
-        });
-    }
-
     acceptMeetingPoint() {
         if (!this.roomId || !this.id) throw new UserInRoomError();
         return this.#firestoreDatabase.doc(`${this.roomId}/${this.id}`).update({
