@@ -60,6 +60,26 @@ describe('server.mjs', () => {
             time: expect.any(Object)
         });
     });
+
+    test('should respond with a left message upon a leave message', async ({ websocketOpener }) => {
+        websocketOpener.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+        await new Promise(resolve => {
+            websocketOpener.on('message', message => {
+                const data = JSON.parse(message);
+                if (data.type === 'created') {
+                    resolve();
+                }
+            });
+        });
+        websocketOpener.send(JSON.stringify({ type: 'leave' }));
+        await expect.poll(() => {
+            console.log(websocketOpener.messages);
+            return websocketOpener.messages;
+        }).toContainEqual({
+            type: 'left',
+            userId: expect.any(String)
+        });
+    });
 });
 
 describe("RoomMember.mjs", () => {
