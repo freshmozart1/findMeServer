@@ -51,7 +51,14 @@ async function createRoomMemberContext(database, use) {
 
 export const test = baseTest.extend({
     /** @type {TestWebSocket} */
-    websocket: async ({ }, use) => {
+    websocketJoiner: async ({ }, use) => {
+        const websocket = new TestWebSocket('ws://localhost:8080');
+        await websocket.waitUntil('open');
+        await use(websocket);
+        if (!websocket.CLOSED) websocket.close(1000, 'Normal closure');
+    },
+    /** @type {TestWebSocket} */
+    websocketOpener: async ({ }, use) => {
         const websocket = new TestWebSocket('ws://localhost:8080');
         await websocket.waitUntil('open');
         await use(websocket);
