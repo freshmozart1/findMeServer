@@ -1,7 +1,8 @@
 import {
     Firestore,
     FieldValue,
-    GeoPoint
+    GeoPoint,
+    FieldPath
 } from 'firebase-admin/firestore';
 
 import {
@@ -50,11 +51,6 @@ export class RoomMember {
     roomUnsubscribe;
 
     /**
-     * The unsubscribe function for a rooms info document snapshot listener.
-     */
-    infoDocUnsubscribe = undefined;
-
-    /**
  * A hashmap that contains all onSnapshot listeners for other room members.
  * This is used to keep track of location changes of other members in the room.
  * @type {Map<string, Unsubscribe>}
@@ -75,6 +71,10 @@ export class RoomMember {
      * @memberof RoomMember
      */
     id;
+
+    get locationRef() {
+        return this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`)
+    }
 
     /**
      * Creates an instance of RoomMember.
@@ -106,7 +106,7 @@ export class RoomMember {
 
         // eslint-disable-next-line no-constant-condition
         while (true) {
-            const snapshot = await this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).limit(batchSize).get();
+            const snapshot = await this.locationRef.limit(batchSize).get();
             if (snapshot.empty) break;
             const batch = this.#firestoreDatabase.batch();
             snapshot.docs.forEach(location => batch.delete(location.ref));
@@ -125,18 +125,20 @@ export class RoomMember {
     async leaveRoom() {
         if (!this.roomId || !this.id) return;
         const infoRef = this.#firestoreDatabase.doc(`${this.roomId}/info`);
-        if (this.roomUnsubscribe) this.roomUnsubscribe();
-        if (this.infoDocUnsubscribe) this.infoDocUnsubscribe();
+        if (this.roomUnsubscribe) {
+            this.roomUnsubscribe();
+            this.roomUnsubscribe = undefined;
+        }
         this.#locationUnsubscribes.forEach(unsubscribe => unsubscribe());
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(infoRef);
             if (!infoDoc.exists) throw new Error('Room does not exist');
             await this.#deleteLocations();
-            const memberCount = infoDoc.data().memberCount;
-            if (memberCount <= 1) {
+            const members = infoDoc.data().members;
+            if (members.length <= 1) {
                 transaction.delete(infoRef);
             } else {
-                transaction.update(infoRef, { memberCount: memberCount - 1 });
+                transaction.update(infoRef, { members: FieldValue.arrayRemove(this.id) });
             }
             transaction.delete(this.#firestoreDatabase.doc(`${this.roomId}/${this.id}`));
         });
@@ -144,8 +146,6 @@ export class RoomMember {
             type: 'left',
             userId: this.id
         }));
-        this.roomUnsubscribe = undefined;
-        this.infoDocUnsubscribe = undefined;
         this.#locationUnsubscribes.clear();
         this.roomId = undefined;
         this.id = undefined;
@@ -174,12 +174,12 @@ export class RoomMember {
             await this.#firestoreDatabase.runTransaction(async transaction => {
                 const infoDoc = await transaction.get(infoRef);
                 if (!infoDoc.exists) throw new Error('Room does not exist');
-                transaction.update(infoRef, { memberCount: infoDoc.data().memberCount + 1 });
                 const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false, acceptedMeetingPoint: 0 };
                 const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
                 transaction.set(memberDoc, clientFields);
+                transaction.update(infoRef, { members: FieldValue.arrayUnion(memberDoc.id) });
                 this.id = memberDoc.id;
-                transaction.set(this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc(), {
+                transaction.set(this.locationRef.doc(), {
                     lat,
                     lng,
                     time: FieldValue.serverTimestamp()
@@ -189,7 +189,6 @@ export class RoomMember {
             console.error(`Join transaction failed for user ${this.id}:`, error);
         }
         this.roomUnsubscribe = this.#createRoomSnapshotListener();
-        this.infoDocUnsubscribe = this.#createInfoDocSnapshotListener();
     }
 
     /**
@@ -213,22 +212,18 @@ export class RoomMember {
                 attempts++;
             }
             if (!success) throw new Error('Failed to create room after 10 attempts');
-            transaction.set(infoDoc.ref, { createdAt: FieldValue.serverTimestamp(), memberCount: 1, meetingPoint: null, proposedMeetingPoint: null });
             const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false, acceptedMeetingPoint: 0 };
             const memberDoc = this.#firestoreDatabase.collection(this.roomId).doc();
+            transaction.set(infoDoc.ref, { createdAt: FieldValue.serverTimestamp(), members: [memberDoc.id], meetingPoint: null, proposedMeetingPoint: null });
             transaction.set(memberDoc, clientFields);
             this.id = memberDoc.id;
-            const locDoc = this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc();
-            const locDocTime = FieldValue.serverTimestamp();
-            transaction.set(locDoc, {
+            transaction.set(this.locationRef.doc(), {
                 lat,
                 lng,
-                time: locDocTime
+                time: FieldValue.serverTimestamp()
             });
         });
-        const snap = await this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).get();
         this.roomUnsubscribe = this.#createRoomSnapshotListener();
-        this.infoDocUnsubscribe = this.#createInfoDocSnapshotListener();
         this.ws.send(JSON.stringify({
             type: 'created',
             roomId: this.roomId,
@@ -267,22 +262,6 @@ export class RoomMember {
         });
     }
 
-    #createInfoDocSnapshotListener() {
-        if (!this.roomId) throw new RoomIdError();
-        return this.#firestoreDatabase.doc(`${this.roomId}/info`).onSnapshot(infoSnap => {
-            const data = infoSnap.data();
-            if (infoSnap.exists) {
-                this.ws.send(JSON.stringify({
-                    type: 'info',
-                    createdAt: data.createdAt,
-                    memberCount: data.memberCount,
-                    meetingPoint: data.meetingPoint,
-                    proposedMeetingPoint: data.proposedMeetingPoint
-                }));
-            }
-        });
-    }
-
     /**
      * Creates a snapshot listener for the room this member belongs to.
      * @private
@@ -292,32 +271,21 @@ export class RoomMember {
     #createRoomSnapshotListener() {
         return this.#firestoreDatabase.collection(this.roomId).onSnapshot(snap => {
             snap.docChanges().forEach(async ({ type, doc }) => {
-                if (type === 'added' && doc.id !== this.id && doc.id !== 'info') {
-                    this.#locationUnsubscribes.set(doc.id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locationSnap => {
-                        if (!locationSnap.empty) {
-                            const newLocation = locationSnap.docs[0].data();
-                            this.ws.send(JSON.stringify({
-                                type: 'location',
-                                userId: doc.id,
-                                lat: newLocation.lat,
-                                lng: newLocation.lng,
-                                time: newLocation.time
-                            }));
+                const id = doc.id;
+                if (type === 'added' && id !== 'info' && id !== this.id) {
+                    this.#locationUnsubscribes.set(id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locSnap => {
+                        if (!locSnap.empty) {
+                            const { lat, lng, time } = locSnap.docs[0].data();
+                            this.ws.send(JSON.stringify({ type: 'location', userId: id, lat, lng, time }));
                         }
                     }));
-                    const newMemberLocation = (await doc.ref.collection('locations').orderBy('time', 'desc').limit(1).get()).docs[0].data();
-                    this.ws.send(JSON.stringify({
-                        type: 'location',
-                        userId: doc.id,
-                        lat: newMemberLocation.lat,
-                        lng: newMemberLocation.lng,
-                        time: newMemberLocation.time
-                    }));
-                } else if (type === 'removed' && doc.id !== 'info') {
-                    this.ws.send(JSON.stringify({
-                        type: 'left',
-                        userId: doc.id
-                    }));
+                } else if ((type === 'added' || type === 'modified') && id === 'info') {
+                    const { meetingPoint, proposedMeetingPoint, members, createdAt } = doc.data();
+                    this.ws.send(JSON.stringify({ type: 'info', meetingPoint, proposedMeetingPoint, members, createdAt }));
+                } else if (type === 'removed' && id !== 'info') {
+                    this.ws.send(JSON.stringify({ type: 'left', userId: id }));
+                    this.#locationUnsubscribes.get(id)?.();
+                    this.#locationUnsubscribes.delete(id);
                 }
             });
         });
@@ -334,7 +302,7 @@ export class RoomMember {
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
         if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
         if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
-        await this.#firestoreDatabase.collection(`${this.roomId}/${this.id}/locations`).doc().set({
+        await this.locationRef.doc().set({
             lat,
             lng,
             time: FieldValue.serverTimestamp()
