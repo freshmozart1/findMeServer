@@ -11,6 +11,16 @@ describe('server.mjs', () => {
         websocket.send(JSON.stringify({ type: 'pong' }));
         await expect.poll(() => websocket.messages.filter(msg => msg.type === 'ping').length).toBeGreaterThanOrEqual(2);
     });
+
+    test('should respond with a created upon a create', async ({ websocket }) => {
+        const location = new GeoPoint(0, 0);
+        websocket.send(JSON.stringify({ type: 'create', lat: location.latitude, lng: location.longitude }));
+        await expect.poll(() => websocket.messages).toContainEqual({
+            type: 'created',
+            roomId: expect.any(String),
+            userId: expect.any(String)
+        });
+    });
 });
 
 describe("RoomMember.mjs", () => {
