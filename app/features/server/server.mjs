@@ -51,13 +51,16 @@ export class FindMeServer extends WebSocketServer {
                     const { type: messageType, lat, lng, roomId } = jsonMessage;
                     if (!messageType) throw new MessageTypeRequiredError();
                     switch (messageType) {
-                        case 'pong': roomMember.checkAlive();
+                        case 'pong': roomMember.checkAlive(); //TODO #2
                             break;
                         case 'create':
                             await roomMember.createRoom(lat, lng);
                             break;
                         case 'join':
                             await roomMember.joinRoom(roomId, lat, lng);
+                            break;
+                        case 'leave':
+                            await roomMember.leaveRoom();
                             break;
                         default: throw new Error(`Unknown message type: ${messageType}`);
                     }
