@@ -50,9 +50,9 @@ async function createRoomMemberContext(database, use) {
 }
 
 export const test = baseTest.extend({
-    /** @type {TestServer} */
+    /** @type {TestWebSocket} */
     websocket: async ({ }, use) => {
-        const websocket = new TestServer('ws://localhost:8080');
+        const websocket = new TestWebSocket('ws://localhost:8080');
         await websocket.waitUntil('open');
         await use(websocket);
         websocket.close();
@@ -67,15 +67,19 @@ export const test = baseTest.extend({
     roomJoiner: async ({ database }, use) => createRoomMemberContext(database, use)
 });
 
-export class TestServer extends WebSocket {
+export class TestWebSocket extends WebSocket {
+    messages = [];
     /**
-     * Creates a TestServer for testing a WebSocket server, initializing it with the specified URL and options.
+     * Creates a TestWebSocket for testing a WebSocket server, initializing it with the specified URL and options.
      * Extends the parent WebSocket class, ensuring that the connection does not reject unauthorized SSL certificates.
      *
      * @param {string} url - The URL to connect to.
      */
     constructor(url) {
         super(url, { rejectUnauthorized: false });
+        this.on('message', message => {
+            this.messages.push(JSON.parse(message));
+        });
     }
 
     /**

@@ -8,20 +8,8 @@ describe('server.mjs', () => {
     });
 
     test('should respond with a ping upon a pong', async ({ websocket }) => {
-        await new Promise((resolve) => {
-            let pingCount = 0;
-            const pingListener = ({ data }) => {
-                if (JSON.parse(data).type === 'ping') {
-                    pingCount++;
-                    if (pingCount === 2) {
-                        websocket.removeEventListener('message', pingListener);
-                        resolve();
-                    }
-                }
-            };
-            websocket.addEventListener('message', pingListener);
-            websocket.send(JSON.stringify({ type: 'pong' }));
-        });
+        websocket.send(JSON.stringify({ type: 'pong' }));
+        await expect.poll(() => websocket.messages.filter(msg => msg.type === 'ping').length).toBeGreaterThanOrEqual(2);
     });
 });
 
