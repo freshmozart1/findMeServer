@@ -70,6 +70,10 @@ export class FindMeServer extends WebSocketServer {
                     ws.close(1011, error.message ?? 'Unknown error');
                 }
             });
+            ws.on('close', async () => {
+                await roomMember.leaveRoom();
+                clearTimeout(roomMember.heartbeatTimeout);
+            });
         });
     }
 }
