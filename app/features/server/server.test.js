@@ -21,6 +21,21 @@ describe('server.mjs', () => {
             userId: expect.any(String)
         });
     });
+
+    test('should delete a room after all members left', async ({ websocket, database }) => {
+        websocket.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+        const roomId = await new Promise(resolve => {
+            websocket.on('message', message => {
+                const data = JSON.parse(message);
+                if (data.type === 'created') {
+                    resolve(data.roomId);
+                }
+            });
+        });
+        expect((await database.collection(roomId).count().get()).data().count).toBe(2);
+        websocket.close();
+        await expect.poll(async () => (await database.collection(roomId).count().get()).data().count).toBe(0);
+    });
 });
 
 describe("RoomMember.mjs", () => {
