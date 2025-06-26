@@ -169,4 +169,10 @@ describe("RoomMember.mjs", () => {
                 && om.proposedMeetingPoint._latitude === meetingPoint.latitude
                 && om.proposedMeetingPoint._longitude === meetingPoint.longitude)).toBeTruthy();
     });
+
+    test('should accept a meeting point', async ({ roomOpener, database }) => {
+        await roomOpener.createRoom(0, 0);
+        await roomOpener.acceptMeetingPoint();
+        expect((await roomOpener.getDoc()).data().acceptedMeetingPoint).toBe(1);
+    });
 });

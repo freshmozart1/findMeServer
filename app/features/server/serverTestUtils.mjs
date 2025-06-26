@@ -37,6 +37,7 @@ async function createRoomMemberContext(database, use) {
         joinRoom: (roomId, latitude, longitude) => roomMember.joinRoom(roomId, latitude, longitude),
         proposeMeetingPoint: (latitude, longitude) => roomMember.proposeMeetingPoint(latitude, longitude),
         updateMeetingPoint: (latitude, longitude) => roomMember.updateMeetingPoint(latitude, longitude),
+        acceptMeetingPoint: () => roomMember.acceptMeetingPoint(),
         updateLocation: (latitude, longitude) => roomMember.updateLocation(latitude, longitude),
         leaveRoom: () => {
             left = true;

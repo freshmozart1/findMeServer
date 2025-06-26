@@ -262,6 +262,13 @@ export class RoomMember {
         });
     }
 
+    acceptMeetingPoint() {
+        if (!this.roomId || !this.id) throw new UserInRoomError();
+        return this.#firestoreDatabase.doc(`${this.roomId}/${this.id}`).update({
+            acceptedMeetingPoint: 1
+        });
+    }
+
     /**
      * Creates a snapshot listener for the room this member belongs to.
      * @private
@@ -278,6 +285,14 @@ export class RoomMember {
                             const { lat, lng, time } = locSnap.docs[0].data();
                             this.ws.send(JSON.stringify({ type: 'location', userId: id, lat, lng, time }));
                         }
+                    }));
+                } else if (type === 'modified' && id !== 'info' && id !== this.id) {
+                    const memberData = doc.data();
+                    this.ws.send(JSON.stringify({
+                        type: 'memberUpdate',
+                        userId: id,
+                        lost: memberData.lost,
+                        acceptedMeetingPoint: memberData.acceptedMeetingPoint
                     }));
                 } else if ((type === 'added' || type === 'modified') && id === 'info') {
                     const { meetingPoint, proposedMeetingPoint, members, createdAt } = doc.data();
