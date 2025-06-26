@@ -55,7 +55,7 @@ export const test = baseTest.extend({
         const websocket = new TestWebSocket('ws://localhost:8080');
         await websocket.waitUntil('open');
         await use(websocket);
-        websocket.close();
+        if (!websocket.CLOSED) websocket.close(1000, 'Normal closure');
     },
     /** @type {Firestore} */
     database: async ({ }, use) => {
