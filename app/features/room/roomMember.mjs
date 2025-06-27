@@ -176,13 +176,15 @@ export class RoomMember {
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
         if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
         if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
-        this.roomInfo.set('id', roomId);
         const infoRef = this.#firestoreDatabase.doc(`${roomId}/info`);
         try {
             await this.#firestoreDatabase.runTransaction(async transaction => {
-                const infoDoc = await transaction.get(infoRef);
+                let infoDoc = await transaction.get(infoRef);
                 if (!infoDoc.exists) throw new Error('Room does not exist');
-                const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false, acceptedMeetingPoint: 0 };
+                infoDoc = infoDoc.data();
+                Object.keys(infoDoc).forEach(key => this.roomInfo.set(key, infoDoc[key]));
+                this.roomInfo.set('id', roomId);
+                const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
                 const memberDoc = this.#firestoreDatabase.collection(roomId).doc();
                 transaction.set(memberDoc, clientFields);
                 transaction.update(infoRef, { members: FieldValue.arrayUnion(memberDoc.id) });
@@ -220,20 +222,17 @@ export class RoomMember {
                 attempts++;
             }
             if (!success) throw new Error('Failed to create room after 10 attempts');
-            const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false, acceptedMeetingPoint: 0 };
             const memberDoc = this.#firestoreDatabase.collection(roomId).doc();
-            const infoDocObject = {
+            const infoFields = {
                 createdAt: FieldValue.serverTimestamp(),
-                members: [memberDoc.id],
-                meetingPoint: null,
-                proposedMeetingPoint: null
+                members: [memberDoc.id]
             };
-            Object.keys(infoDocObject).forEach(key => {
-                this.roomInfo.set(key, infoDocObject[key]);
+            Object.keys(infoFields).forEach(key => {
+                this.roomInfo.set(key, infoFields[key]);
             });
             this.roomInfo.set('id', roomId);
-            transaction.set(infoDoc.ref, infoDocObject);
-            transaction.set(memberDoc, clientFields);
+            transaction.set(infoDoc.ref, infoFields);
+            transaction.set(memberDoc, { joinedAt: FieldValue.serverTimestamp(), lost: false });
             this.id = memberDoc.id;
             transaction.set(this.locationRef.doc(), {
                 lat,
@@ -250,27 +249,6 @@ export class RoomMember {
     }
 
     /**
-     * Propose a new meeting point for the room.
-     */
-    async proposeMeetingPoint(lat, lng) {
-        if (!this.roomInfo.get('id')) throw new RoomIdError();
-        if (lat === undefined || lat === null) throw new LatitudeRequiredError();
-        if (lng === undefined || lng === null) throw new LongitudeRequiredError();
-        if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
-        if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
-        return this.#firestoreDatabase.doc(`${this.roomInfo.get('id')}/info`).update({
-            proposedMeetingPoint: new GeoPoint(lat, lng)
-        });
-    }
-
-    acceptMeetingPoint() {
-        if (!this.roomInfo.get('id') || !this.id) throw new UserInRoomError();
-        return this.#firestoreDatabase.doc(`${this.roomInfo.get('id')}/${this.id}`).update({
-            acceptedMeetingPoint: 1
-        });
-    }
-
-    /**
      * Creates a snapshot listener for the room this member belongs to.
      * @private
      * @memberof RoomMember
@@ -281,25 +259,7 @@ export class RoomMember {
             for (const { type, doc } of snap.docChanges()) {
                 const id = doc.id;
                 const data = doc.data();
-                if (id === this.id) continue;
-                if (id === 'info') {
-                    if (type === 'added' || type === 'modified') {
-                        const { meetingPoint, proposedMeetingPoint } = data;
-                        if (meetingPoint && this.roomInfo.get('meetingPoint') !== meetingPoint) {
-                            console.log('Meeting Point:', meetingPoint);
-                            this.ws.send(JSON.stringify({ type: 'meetingPoint', lat: meetingPoint._latitude, lng: meetingPoint._longitude }));
-                            this.roomInfo.set('meetingPoint', meetingPoint);
-                            continue;
-                        }
-                        if (proposedMeetingPoint && this.roomInfo.get('proposedMeetingPoint') !== proposedMeetingPoint) {
-                            console.log('Proposed Meeting Point:', proposedMeetingPoint);
-                            this.ws.send(JSON.stringify({ type: 'proposedMeetingPoint', lat: proposedMeetingPoint._latitude, lng: proposedMeetingPoint._longitude }));
-                            this.roomInfo.set('proposedMeetingPoint', proposedMeetingPoint);
-                            continue;
-                        }
-                    }
-                    continue;
-                }
+                if (id === this.id || id === 'info') continue;
                 switch (type) {
                     case 'added':
                         this.#otherMembersData.set(id, data);

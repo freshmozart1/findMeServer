@@ -241,25 +241,4 @@ describe("RoomMember.mjs", () => {
             time: expect.any(Object)
         });
     });
-
-    test('should propose meeting point', { timeout: 3000 }, async ({ roomOpener, roomJoiner }) => {
-        await roomOpener.createRoom(0, 0);
-        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
-        const meetingPoint = new GeoPoint(1, 1);
-        await roomOpener.proposeMeetingPoint(meetingPoint.latitude, meetingPoint.longitude);
-        await expect.poll(() => roomJoiner.messages.some(jm => jm.type === 'info'
-            && jm.proposedMeetingPoint
-            && jm.proposedMeetingPoint._latitude === meetingPoint.latitude
-            && jm.proposedMeetingPoint._longitude === meetingPoint.longitude)
-            && roomOpener.messages.some(om => om.type === 'info'
-                && om.proposedMeetingPoint
-                && om.proposedMeetingPoint._latitude === meetingPoint.latitude
-                && om.proposedMeetingPoint._longitude === meetingPoint.longitude)).toBeTruthy();
-    });
-
-    test('should accept a meeting point', async ({ roomOpener, database }) => {
-        await roomOpener.createRoom(0, 0);
-        await roomOpener.acceptMeetingPoint();
-        expect((await roomOpener.getDoc()).data().acceptedMeetingPoint).toBe(1);
-    });
 });
