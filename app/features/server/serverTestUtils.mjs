@@ -11,7 +11,7 @@ initializeApp({
 });
 
 /**
- * @typedef {Omit<RoomMember, 'roomId'> & {
+ * @typedef {RoomMember & {
  * getRoomId: () => string,
  * getId: () => string,
  * messages: any[],
@@ -31,7 +31,7 @@ async function createRoomMemberContext(database, use) {
         terminate: vi.fn()
     });
     await use({
-        getRoomId: () => roomMember.roomId,
+        getRoomId: () => roomMember.roomInfo.get('id'),
         getId: () => roomMember.id,
         createRoom: (latitude, longitude) => roomMember.createRoom(latitude, longitude),
         joinRoom: (roomId, latitude, longitude) => roomMember.joinRoom(roomId, latitude, longitude),
@@ -42,8 +42,8 @@ async function createRoomMemberContext(database, use) {
             left = true;
             return roomMember.leaveRoom()
         },
-        getDoc: () => database.doc(`${roomMember.roomId}/${roomMember.id}`).get(),
-        getLocations: () => database.collection(`${roomMember.roomId}/${roomMember.id}/locations`).get(),
+        getDoc: () => database.doc(`${roomMember.roomInfo.get('id')}/${roomMember.id}`).get(),
+        getLocations: () => database.collection(`${roomMember.roomInfo.get('id')}/${roomMember.id}/locations`).get(),
         messages
     });
     if (!left) await roomMember.leaveRoom();
