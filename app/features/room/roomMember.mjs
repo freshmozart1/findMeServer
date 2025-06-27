@@ -1,7 +1,6 @@
-import {
-    Firestore,
-    FieldValue
-} from 'firebase-admin/firestore';
+
+import { Firestore, FieldValue } from 'firebase-admin/firestore';
+import { Room } from './room.mjs';
 
 import {
     LatitudeError,
@@ -14,6 +13,15 @@ import {
 import { WebSocket } from 'ws';
 
 export class RoomMember {
+    /**
+     * A map that holds all information of the rooms info document.
+     * @type {Map<string, any>}
+     * @memberof RoomMember
+     */
+    get roomInfo() {
+        // For compatibility with tests and previous code
+        return this.room ? this.room.getInfo() : new Map();
+    }
     /**
      * @typedef {import("firebase/firestore").Unsubscribe} Unsubscribe
      */
@@ -63,12 +71,12 @@ export class RoomMember {
      */
     #otherMembersData = new Map();
 
+
     /**
-     * A map that holds all information of the rooms info document.
-     * @type {Map<string, any>}
-     * @memberof RoomMember
+     * The Room instance this member belongs to.
+     * @type {Room | undefined}
      */
-    roomInfo = new Map();
+    room = undefined;
 
     /**
      * The unique identifier for this room member.
@@ -77,8 +85,10 @@ export class RoomMember {
      */
     id;
 
+
     get locationRef() {
-        return this.#firestoreDatabase.collection(`${this.roomInfo.get('id')}/${this.id}/locations`)
+        if (!this.room || !this.id) throw new Error('Not in a room');
+        return this.#firestoreDatabase.collection(`${this.room.id}/${this.id}/locations`);
     }
 
     /**
@@ -127,25 +137,23 @@ export class RoomMember {
      * @memberof RoomMember
      */
     async leaveRoom() {
-        const roomId = this.roomInfo.get('id');
-        if (!roomId || !this.id) return;
-        const infoRef = this.#firestoreDatabase.doc(`${roomId}/info`);
+        if (!this.room || !this.id) return;
         if (this.roomUnsubscribe) {
             this.roomUnsubscribe();
             this.roomUnsubscribe = undefined;
         }
         this.#locationUnsubscribes.forEach(unsubscribe => unsubscribe());
         await this.#firestoreDatabase.runTransaction(async transaction => {
-            const infoDoc = await transaction.get(infoRef);
+            const infoDoc = await transaction.get(this.room.infoRef);
             if (!infoDoc.exists) throw new Error('Room does not exist');
             await this.#deleteLocations();
             const members = infoDoc.data().members;
             if (members.length <= 1) {
-                transaction.delete(infoRef);
+                transaction.delete(this.room.infoRef);
             } else {
-                transaction.update(infoRef, { members: FieldValue.arrayRemove(this.id) });
+                transaction.update(this.room.infoRef, { members: FieldValue.arrayRemove(this.id) });
             }
-            transaction.delete(this.#firestoreDatabase.doc(`${roomId}/${this.id}`));
+            transaction.delete(this.#firestoreDatabase.doc(`${this.room.id}/${this.id}`));
         });
         this.ws.send(JSON.stringify({
             type: 'left',
@@ -153,7 +161,7 @@ export class RoomMember {
         }));
         this.#locationUnsubscribes.clear();
         this.#otherMembersData.clear();
-        this.roomInfo.clear();
+        this.room = undefined;
         this.id = undefined;
     }
 
@@ -169,30 +177,30 @@ export class RoomMember {
      * @throws {LongitudeError} If longitude is not a number or out of range
      */
     async joinRoom(roomId, lat, lng) {
-        if (this.roomInfo.get('id')) throw new UserInRoomError();
+        if (this.room) throw new UserInRoomError();
         if (lat === undefined || lat === null) throw new LatitudeRequiredError();
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
-        if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
-        if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
-        const infoRef = this.#firestoreDatabase.doc(`${roomId}/info`);
+        if (typeof lat !== 'number' || lat < -90 || lat > 90) throw new LatitudeError();
+        if (typeof lng !== 'number' || lng < -180 || lng > 180) throw new LongitudeError();
         try {
+            const room = await Room.get(this.#firestoreDatabase, roomId);
+            const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
+            let memberId;
             await this.#firestoreDatabase.runTransaction(async transaction => {
-                let infoDoc = await transaction.get(infoRef);
+                const infoDoc = await transaction.get(room.infoRef);
                 if (!infoDoc.exists) throw new Error('Room does not exist');
-                infoDoc = infoDoc.data();
-                Object.keys(infoDoc).forEach(key => this.roomInfo.set(key, infoDoc[key]));
-                this.roomInfo.set('id', roomId);
-                const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
                 const memberDoc = this.#firestoreDatabase.collection(roomId).doc();
                 transaction.set(memberDoc, clientFields);
-                transaction.update(infoRef, { members: FieldValue.arrayUnion(memberDoc.id) });
-                this.id = memberDoc.id;
-                transaction.set(this.locationRef.doc(), {
+                transaction.update(room.infoRef, { members: FieldValue.arrayUnion(memberDoc.id) });
+                memberId = memberDoc.id;
+                transaction.set(this.#firestoreDatabase.collection(`${roomId}/${memberId}/locations`).doc(), {
                     lat,
                     lng,
                     time: FieldValue.serverTimestamp()
                 });
             });
+            this.room = room;
+            this.id = memberId;
         } catch (error) {
             console.error(`Join transaction failed for user ${this.id}:`, error);
         }
@@ -205,43 +213,19 @@ export class RoomMember {
      * @param {number} lng 
      */
     async createRoom(lat, lng) {
-        if (this.roomInfo.get('id')) throw new UserInRoomError();
+        if (this.room) throw new UserInRoomError();
         if (lat === undefined || lat === null) throw new LatitudeRequiredError();
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
-        if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
-        if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
-        const alphanumericCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        let success = false, attempts = 0, infoDoc, roomId;
-        await this.#firestoreDatabase.runTransaction(async transaction => {
-            while (!success && attempts < 10) {
-                roomId = Array.from({ length: 4 }, () => alphanumericCharacters[Math.floor(Math.random() * alphanumericCharacters.length)]).join('');
-                infoDoc = await transaction.get(this.#firestoreDatabase.doc(`${roomId}/info`));
-                success = !infoDoc.exists;
-                attempts++;
-            }
-            if (!success) throw new Error('Failed to create room after 10 attempts');
-            const memberDoc = this.#firestoreDatabase.collection(roomId).doc();
-            const infoFields = {
-                createdAt: FieldValue.serverTimestamp(),
-                members: [memberDoc.id]
-            };
-            Object.keys(infoFields).forEach(key => {
-                this.roomInfo.set(key, infoFields[key]);
-            });
-            this.roomInfo.set('id', roomId);
-            transaction.set(infoDoc.ref, infoFields);
-            transaction.set(memberDoc, { joinedAt: FieldValue.serverTimestamp(), lost: false });
-            this.id = memberDoc.id;
-            transaction.set(this.locationRef.doc(), {
-                lat,
-                lng,
-                time: FieldValue.serverTimestamp()
-            });
-        });
+        if (typeof lat !== 'number' || lat < -90 || lat > 90) throw new LatitudeError();
+        if (typeof lng !== 'number' || lng < -180 || lng > 180) throw new LongitudeError();
+        const memberFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
+        const { room, memberId } = await Room.create(this.#firestoreDatabase, memberFields, lat, lng);
+        this.room = room;
+        this.id = memberId;
         this.roomUnsubscribe = this.#createRoomSnapshotListener();
         this.ws.send(JSON.stringify({
             type: 'created',
-            roomId,
+            roomId: room.id,
             userId: this.id
         }));
     }
@@ -253,7 +237,8 @@ export class RoomMember {
      * @returns {Promise<Unsubscribe>}
      */
     #createRoomSnapshotListener() {
-        return this.#firestoreDatabase.collection(this.roomInfo.get('id')).onSnapshot(snap => {
+        if (!this.room) throw new Error('Not in a room');
+        return this.#firestoreDatabase.collection(this.room.id).onSnapshot(snap => {
             for (const { type, doc } of snap.docChanges()) {
                 const id = doc.id;
                 const data = doc.data();
@@ -293,11 +278,11 @@ export class RoomMember {
      * @returns {Promise<void>}
      */
     async updateLocation(lat, lng) {
-        if (!this.roomInfo.get('id') || !this.id) throw new UserInRoomError();
+        if (!this.room || !this.id) throw new UserInRoomError();
         if (lat === undefined || lat === null) throw new LatitudeRequiredError();
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
-        if (typeof lat !== 'number' || lat < - 90 || lat > 90) throw new LatitudeError();
-        if (typeof lng !== 'number' || lng < - 180 || lng > 180) throw new LongitudeError();
+        if (typeof lat !== 'number' || lat < -90 || lat > 90) throw new LatitudeError();
+        if (typeof lng !== 'number' || lng < -180 || lng > 180) throw new LongitudeError();
         await this.locationRef.doc().set({
             lat,
             lng,
