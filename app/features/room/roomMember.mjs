@@ -272,8 +272,8 @@ export class RoomMember {
                         break;
                     case 'modified':
                         const oldData = this.#otherMembersData.get(id);
-                        if (oldData?.acceptedMeetingPoint !== data.acceptedMeetingPoint || oldData?.lost !== data.lost) {
-                            this.ws.send(JSON.stringify({ type: 'memberUpdate', userId: id, lost: data.lost, acceptedMeetingPoint: data.acceptedMeetingPoint }));
+                        if (oldData?.lost !== data.lost) {
+                            this.ws.send(JSON.stringify({ type: 'memberUpdate', userId: id, lost: data.lost }));
                         }
                         this.#otherMembersData.set(id, data);
                         break;
