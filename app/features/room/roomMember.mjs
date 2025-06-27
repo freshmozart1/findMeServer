@@ -1,7 +1,6 @@
 import {
     Firestore,
-    FieldValue,
-    GeoPoint
+    FieldValue
 } from 'firebase-admin/firestore';
 
 import {
@@ -9,7 +8,6 @@ import {
     LatitudeRequiredError,
     LongitudeError,
     LongitudeRequiredError,
-    RoomIdError,
     UserInRoomError,
     WebSocketError
 } from '../server/errors.mjs';
