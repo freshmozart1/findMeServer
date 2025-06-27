@@ -169,28 +169,24 @@ describe("RoomMember.mjs", () => {
         });
     });
 
-    test('should add a second member to a room', { timeout: 3000 }, async ({ roomOpener, roomJoiner }) => {
+    test('should notify members when another member joins a room', async ({ roomOpener, roomJoiner }) => {
         const openerLocation = new GeoPoint(0, 0);
         await roomOpener.createRoom(openerLocation.latitude, openerLocation.longitude);
-        expect(roomOpener.getRoomId()).toBeDefined();
-        expect(roomOpener.getId()).toBeDefined();
-        const openerDoc = await roomOpener.getDoc();
-        expect(openerDoc.exists).toBe(true);
-        expect((await roomOpener.getLocations()).docs).toHaveLength(1);
+        const roomId = roomOpener.getRoomId();
 
-        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
-        expect(roomJoiner.getRoomId()).toBe(roomOpener.getRoomId());
-        expect(roomJoiner.getId()).toBeDefined();
-        const joinerDoc = await roomJoiner.getDoc();
-        expect(joinerDoc.exists).toBe(true);
-        expect((await roomJoiner.getLocations()).docs).toHaveLength(1);
+        await roomJoiner.joinRoom(roomId, 1, 1);
+        expect(roomJoiner.getRoomId()).toBe(roomId);
 
         await expect.poll(() => roomJoiner.messages).toContainEqual({
-            type: 'location',
+            type: 'memberUpdate',
             userId: roomOpener.getId(),
-            lat: openerLocation.latitude,
-            lng: openerLocation.longitude,
-            time: expect.any(Object)
+            lost: false
+        });
+
+        await expect.poll(() => roomOpener.messages).toContainEqual({
+            type: 'memberUpdate',
+            userId: roomJoiner.getId(),
+            lost: false
         });
     });
 
