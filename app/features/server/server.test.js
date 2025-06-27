@@ -93,7 +93,7 @@ describe('server.mjs', () => {
             });
         });
         websocketOpener.send(JSON.stringify({ type: 'location', lat: location.latitude, lng: location.longitude }));
-        expect((await database.collection(`${roomId}/${userId}/locations`).count().get()).data().count).toBe(2);
+        await expect.poll(async () => (await database.collection(`${roomId}/${userId}/locations`).count().get()).data().count).toBe(2);
     });
 });
 
