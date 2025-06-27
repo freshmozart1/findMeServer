@@ -1,8 +1,7 @@
 import {
     Firestore,
     FieldValue,
-    GeoPoint,
-    FieldPath
+    GeoPoint
 } from 'firebase-admin/firestore';
 
 import {
@@ -57,6 +56,14 @@ export class RoomMember {
  * @memberof RoomMember
  */
     #locationUnsubscribes = new Map();
+
+    /**
+     * A map to store data of other room members.
+     * @private
+     * @type {Map<string, FirebaseFirestore.DocumentData>}
+     * @memberof RoomMember
+     */
+    #otherMembersData = new Map();
 
     /**
      * The unique identifier for the room this member belongs to
@@ -147,6 +154,7 @@ export class RoomMember {
             userId: this.id
         }));
         this.#locationUnsubscribes.clear();
+        this.#otherMembersData.clear();
         this.roomId = undefined;
         this.id = undefined;
     }
@@ -260,32 +268,42 @@ export class RoomMember {
      */
     #createRoomSnapshotListener() {
         return this.#firestoreDatabase.collection(this.roomId).onSnapshot(snap => {
-            snap.docChanges().forEach(async ({ type, doc }) => {
+            for (const { type, doc } of snap.docChanges()) {
                 const id = doc.id;
-                if (type === 'added' && id !== 'info' && id !== this.id) {
-                    this.#locationUnsubscribes.set(id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locSnap => {
-                        if (!locSnap.empty) {
-                            const { lat, lng, time } = locSnap.docs[0].data();
-                            this.ws.send(JSON.stringify({ type: 'location', userId: id, lat, lng, time }));
-                        }
-                    }));
-                } else if (type === 'modified' && id !== 'info' && id !== this.id) {
-                    const memberData = doc.data();
-                    this.ws.send(JSON.stringify({
-                        type: 'memberUpdate',
-                        userId: id,
-                        lost: memberData.lost,
-                        acceptedMeetingPoint: memberData.acceptedMeetingPoint
-                    }));
-                } else if ((type === 'added' || type === 'modified') && id === 'info') {
-                    const { meetingPoint, proposedMeetingPoint, members, createdAt } = doc.data();
-                    this.ws.send(JSON.stringify({ type: 'info', meetingPoint, proposedMeetingPoint, members, createdAt }));
-                } else if (type === 'removed' && id !== 'info') {
-                    this.ws.send(JSON.stringify({ type: 'left', userId: id }));
-                    this.#locationUnsubscribes.get(id)?.();
-                    this.#locationUnsubscribes.delete(id);
+                const data = doc.data();
+                if (id === this.id) continue;
+                if (id === 'info') {
+                    if (type === 'added' || type === 'modified') {
+                        const { meetingPoint, proposedMeetingPoint, members, createdAt } = data;
+                        this.ws.send(JSON.stringify({ type: 'info', meetingPoint, proposedMeetingPoint, members, createdAt }));
+                    }
+                    continue;
                 }
-            });
+                switch (type) {
+                    case 'added':
+                        this.#otherMembersData.set(id, data);
+                        this.#locationUnsubscribes.set(id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locSnap => {
+                            if (!locSnap.empty) {
+                                const { lat, lng, time } = locSnap.docs[0].data();
+                                this.ws.send(JSON.stringify({ type: 'location', userId: id, lat, lng, time }));
+                            }
+                        }));
+                        break;
+                    case 'modified':
+                        const oldData = this.#otherMembersData.get(id);
+                        if (oldData?.acceptedMeetingPoint !== data.acceptedMeetingPoint || oldData?.lost !== data.lost) {
+                            this.ws.send(JSON.stringify({ type: 'memberUpdate', userId: id, lost: data.lost, acceptedMeetingPoint: data.acceptedMeetingPoint }));
+                        }
+                        this.#otherMembersData.set(id, data);
+                        break;
+                    case 'removed':
+                        this.ws.send(JSON.stringify({ type: 'left', userId: id }));
+                        this.#locationUnsubscribes.get(id)?.();
+                        this.#locationUnsubscribes.delete(id);
+                        this.#otherMembersData.delete(id);
+                        break;
+                }
+            }
         });
     }
 
