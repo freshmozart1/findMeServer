@@ -261,6 +261,7 @@ export class RoomMember {
                 switch (type) {
                     case 'added':
                         this.#otherMembersData.set(id, data);
+                        this.ws.send(JSON.stringify({ type: 'memberUpdate', userId: id, lost: data.lost }));
                         this.#locationUnsubscribes.set(id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locSnap => {
                             if (!locSnap.empty) {
                                 const { lat, lng, time } = locSnap.docs[0].data();
