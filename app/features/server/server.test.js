@@ -95,6 +95,31 @@ describe('server.mjs', () => {
         websocketOpener.send(JSON.stringify({ type: 'location', lat: location.latitude, lng: location.longitude }));
         await expect.poll(async () => (await database.collection(`${roomId}/${userId}/locations`).count().get()).data().count).toBe(2);
     });
+
+    test('should notify other members if one members location changes', async ({ websocketJoiner, websocketOpener }) => {
+        const location = new GeoPoint(2, 2);
+        websocketOpener.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+        const [roomId, userId] = await new Promise(resolve => {
+            websocketOpener.on('message', message => {
+                const data = JSON.parse(message);
+                if (data.type === 'created') {
+                    resolve([data.roomId, data.userId]);
+                }
+            });
+        });
+        websocketJoiner.send(JSON.stringify({ type: 'join', roomId, lat: 1, lng: 1 }));
+        websocketOpener.send(JSON.stringify({ type: 'location', lat: location.latitude, lng: location.longitude }));
+        await expect.poll(() => {
+            console.log(websocketJoiner.messages);
+            return websocketJoiner.messages;
+        }).toContainEqual({
+            type: 'location',
+            userId: userId,
+            lat: location.latitude,
+            lng: location.longitude,
+            time: expect.any(Object)
+        });
+    });
 });
 
 describe("RoomMember.mjs", () => {
