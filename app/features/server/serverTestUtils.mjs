@@ -31,7 +31,7 @@ async function createRoomMemberContext(database, use) {
         terminate: vi.fn()
     });
     await use({
-        getRoomId: () => roomMember.roomInfo.get('id'),
+        getRoomId: () => roomMember.room.id,
         getId: () => roomMember.id,
         createRoom: (latitude, longitude) => roomMember.createRoom(latitude, longitude),
         joinRoom: (roomId, latitude, longitude) => roomMember.joinRoom(roomId, latitude, longitude),
@@ -40,8 +40,8 @@ async function createRoomMemberContext(database, use) {
             left = true;
             return roomMember.leaveRoom()
         },
-        getDoc: () => database.doc(`${roomMember.roomInfo.get('id')}/${roomMember.id}`).get(),
-        getLocations: () => database.collection(`${roomMember.roomInfo.get('id')}/${roomMember.id}/locations`).get(),
+        getDoc: () => database.doc(`${roomMember.room.id}/${roomMember.id}`).get(),
+        getLocations: () => database.collection(`${roomMember.room.id}/${roomMember.id}/locations`).get(),
         messages
     });
     if (!left) await roomMember.leaveRoom();

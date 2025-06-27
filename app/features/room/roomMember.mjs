@@ -14,15 +14,6 @@ import { WebSocket } from 'ws';
 
 export class RoomMember {
     /**
-     * A map that holds all information of the rooms info document.
-     * @type {Map<string, any>}
-     * @memberof RoomMember
-     */
-    get roomInfo() {
-        // For compatibility with tests and previous code
-        return this.room ? this.room.getInfo() : new Map();
-    }
-    /**
      * @typedef {import("firebase/firestore").Unsubscribe} Unsubscribe
      */
 
