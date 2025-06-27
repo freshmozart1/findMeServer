@@ -62,6 +62,9 @@ export class FindMeServer extends WebSocketServer {
                         case 'leave':
                             await roomMember.leaveRoom();
                             break;
+                        case 'location':
+                            await roomMember.updateLocation(lat, lng);
+                            break;
                         default: throw new Error(`Unknown message type: ${messageType}`);
                     }
                 }

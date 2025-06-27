@@ -80,6 +80,21 @@ describe('server.mjs', () => {
             userId: expect.any(String)
         });
     });
+
+    test('should update location upon receiving a location message', async ({ websocketOpener, database }) => {
+        const location = new GeoPoint(1, 1);
+        websocketOpener.send(JSON.stringify({ type: 'create', lat: 0, lng: 0 }));
+        const [roomId, userId] = await new Promise(resolve => {
+            websocketOpener.on('message', message => {
+                const data = JSON.parse(message);
+                if (data.type === 'created') {
+                    resolve([data.roomId, data.userId]);
+                }
+            });
+        });
+        websocketOpener.send(JSON.stringify({ type: 'location', lat: location.latitude, lng: location.longitude }));
+        expect((await database.collection(`${roomId}/${userId}/locations`).count().get()).data().count).toBe(2);
+    });
 });
 
 describe("RoomMember.mjs", () => {
