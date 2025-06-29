@@ -174,25 +174,21 @@ export class RoomMember {
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
         if (typeof lat !== 'number' || lat < -90 || lat > 90) throw new LatitudeError();
         if (typeof lng !== 'number' || lng < -180 || lng > 180) throw new LongitudeError();
-        try {
-            const room = await Room.get(this.#firestoreDatabase, roomId);
-            const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
-            await this.#firestoreDatabase.runTransaction(async transaction => {
-                const infoDoc = await transaction.get(room.infoRef);
-                if (!infoDoc.exists) throw new Error('Room does not exist');
-                const memberDoc = room.collection.doc();
-                transaction.set(memberDoc, clientFields);
-                this.id = memberDoc.id;
-                transaction.set(memberDoc.collection(`locations`).doc(), {
-                    lat,
-                    lng,
-                    time: FieldValue.serverTimestamp()
-                });
+        const room = await Room.get(this.#firestoreDatabase, roomId);
+        const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
+        await this.#firestoreDatabase.runTransaction(async transaction => {
+            const infoDoc = await transaction.get(room.infoRef);
+            if (!infoDoc.exists) throw new Error('Room does not exist');
+            const memberDoc = room.collection.doc();
+            transaction.set(memberDoc, clientFields);
+            this.id = memberDoc.id;
+            transaction.set(memberDoc.collection(`locations`).doc(), {
+                lat,
+                lng,
+                time: FieldValue.serverTimestamp()
             });
-            this.room = room;
-        } catch (error) {
-            console.error(`Join transaction failed for user ${this.id}:`, error);
-        }
+        });
+        this.room = room;
         this.roomUnsubscribe = this.#createRoomSnapshotListener();
     }
 
