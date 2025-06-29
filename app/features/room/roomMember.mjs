@@ -173,21 +173,19 @@ export class RoomMember {
         try {
             const room = await Room.get(this.#firestoreDatabase, roomId);
             const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
-            let memberId;
             await this.#firestoreDatabase.runTransaction(async transaction => {
                 const infoDoc = await transaction.get(room.infoRef);
                 if (!infoDoc.exists) throw new Error('Room does not exist');
-                const memberDoc = this.#firestoreDatabase.collection(roomId).doc();
+                const memberDoc = room.collection.doc();
                 transaction.set(memberDoc, clientFields);
-                memberId = memberDoc.id;
-                transaction.set(this.#firestoreDatabase.collection(`${roomId}/${memberId}/locations`).doc(), {
+                this.id = memberDoc.id;
+                transaction.set(memberDoc.collection(`locations`).doc(), {
                     lat,
                     lng,
                     time: FieldValue.serverTimestamp()
                 });
             });
             this.room = room;
-            this.id = memberId;
         } catch (error) {
             console.error(`Join transaction failed for user ${this.id}:`, error);
         }
@@ -224,7 +222,7 @@ export class RoomMember {
      */
     #createRoomSnapshotListener() {
         if (!this.room) throw new Error('Not in a room');
-        return this.#firestoreDatabase.collection(this.room.id).onSnapshot(snap => {
+        return this.room.collection.onSnapshot(snap => {
             for (const { type, doc } of snap.docChanges()) {
                 const id = doc.id;
                 const data = doc.data();
