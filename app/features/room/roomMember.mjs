@@ -143,14 +143,18 @@ export class RoomMember {
             }
             transaction.delete(this.#firestoreDatabase.doc(`${this.room.id}/${this.id}`));
         });
-        this.ws.send(JSON.stringify({
-            type: 'left',
-            userId: this.id
-        }));
+        this.#sendLeft();
         this.#locationUnsubscribes.clear();
         this.#otherMembersData.clear();
         this.room = undefined;
         this.id = undefined;
+    }
+
+    #sendLeft(id = this.id) {
+        this.ws.send(JSON.stringify({
+            type: 'left',
+            userId: id
+        }));
     }
 
     /**
@@ -254,7 +258,7 @@ export class RoomMember {
                         this.#otherMembersData.set(id, data);
                         break;
                     case 'removed':
-                        this.ws.send(JSON.stringify({ type: 'left', userId: id }));
+                        this.#sendLeft(id);
                         this.#locationUnsubscribes.get(id)?.();
                         this.#locationUnsubscribes.delete(id);
                         this.#otherMembersData.delete(id);
