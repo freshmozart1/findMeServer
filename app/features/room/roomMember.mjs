@@ -237,7 +237,13 @@ export class RoomMember {
                 switch (type) {
                     case 'added':
                         this.#otherMembersData.set(id, data);
-                        this.ws.send(JSON.stringify({ type: 'memberUpdate', userId: id, lost: data.lost }));
+                        this.ws.send(JSON.stringify({
+                            type: 'memberUpdate',
+                            userId: id,
+                            lost: data.lost,
+                            proposedLocation: data.proposedLocation,
+                            acceptedProposal: data.acceptedProposal
+                        }));
                         this.#locationUnsubscribes.set(id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locSnap => {
                             if (!locSnap.empty) {
                                 const { lat, lng, time } = locSnap.docs[0].data();
@@ -247,8 +253,14 @@ export class RoomMember {
                         break;
                     case 'modified':
                         const oldData = this.#otherMembersData.get(id);
-                        if (oldData?.lost !== data.lost) {
-                            this.ws.send(JSON.stringify({ type: 'memberUpdate', userId: id, lost: data.lost }));
+                        if (oldData?.lost !== data.lost || oldData?.proposedLocation !== data.proposedLocation || oldData?.acceptedProposal !== data.acceptedProposal) {
+                            this.ws.send(JSON.stringify({
+                                type: 'memberUpdate',
+                                userId: id,
+                                lost: data.lost,
+                                proposedLocation: data.proposedLocation,
+                                acceptedProposal: data.acceptedProposal
+                            }));
                         }
                         this.#otherMembersData.set(id, data);
                         break;
@@ -279,6 +291,50 @@ export class RoomMember {
             lng,
             time: FieldValue.serverTimestamp()
         });
+    }
+
+    /**
+     * Proposes a meeting location to other room members.
+     * Only one proposal per member at a time.
+     * @param {import('firebase-admin/firestore').GeoPoint} geoPoint
+     * @returns {Promise<void>}
+     */
+    async proposeLocation(geoPoint) {
+        if (!this.room || !this.id) throw new UserInRoomError();
+        if (!geoPoint || typeof geoPoint.latitude !== 'number' || typeof geoPoint.longitude !== 'number') {
+            throw new LatitudeRequiredError();
+        }
+        // Set the proposedLocation field in the member's document
+        await this.#firestoreDatabase.collection(this.room.id).doc(this.id).update({
+            proposedLocation: geoPoint
+        });
+        this.ws.send(JSON.stringify({ type: 'proposedLocation', userId: this.id, lat: geoPoint.latitude, lng: geoPoint.longitude }));
+    }
+
+    /**
+     * Accepts a proposed location from another member. Only one accepted at a time.
+     * @param {string} proposerId - The userId of the member whose proposal to accept
+     * @returns {Promise<void>}
+     */
+    async acceptLocation(proposerId) {
+        if (!this.room || !this.id) throw new UserInRoomError();
+        if (!proposerId || proposerId === this.id) throw new Error('Invalid proposerId');
+        const memberRef = this.#firestoreDatabase.collection(this.room.id).doc(this.id);
+        // Remove previous acceptance if any
+        await memberRef.update({ acceptedProposal: proposerId });
+        this.ws.send(JSON.stringify({ type: 'acceptedLocation', userId: this.id, proposerId }));
+    }
+
+    /**
+     * Clears the member's own proposed location.
+     * @returns {Promise<void>}
+     */
+    async clearProposal() {
+        if (!this.room || !this.id) throw new UserInRoomError();
+        await this.#firestoreDatabase.collection(this.room.id).doc(this.id).update({
+            proposedLocation: FieldValue.delete()
+        });
+        this.ws.send(JSON.stringify({ type: 'clearedProposal', userId: this.id }));
     }
 
     checkAlive() {

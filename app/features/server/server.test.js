@@ -236,4 +236,31 @@ describe("RoomMember.mjs", () => {
             time: expect.any(Object)
         });
     });
+
+    test('should allow a member to propose a meeting location', async ({ roomOpener, database }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeLocation(geoPoint);
+        const doc = await database.doc(`${roomOpener.getRoomId()}/${roomOpener.getId()}`).get();
+        expect(doc.data().proposedLocation).toMatchObject({ latitude: 5, longitude: 10 });
+    });
+
+    test('should notify other members of a proposed location', async ({ roomOpener, roomJoiner }) => {
+        await roomOpener.createRoom(0, 0);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeLocation(geoPoint);
+        await expect.poll(() => {
+            console.log(roomJoiner.messages);
+            return roomJoiner.messages;
+        }).toContainEqual({
+            type: 'memberUpdate',
+            userId: roomOpener.getId(),
+            lost: false,
+            proposedLocation: {
+                _latitude: 5,
+                _longitude: 10
+            }
+        });
+    });
 });
