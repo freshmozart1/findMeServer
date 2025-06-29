@@ -138,11 +138,8 @@ export class RoomMember {
             const infoDoc = await transaction.get(this.room.infoRef);
             if (!infoDoc.exists) throw new Error('Room does not exist');
             await this.#deleteLocations();
-            const members = infoDoc.data().members;
-            if (members.length <= 1) {
+            if ((await this.room.collection.count().get()).data().count <= 2) {
                 transaction.delete(this.room.infoRef);
-            } else {
-                transaction.update(this.room.infoRef, { members: FieldValue.arrayRemove(this.id) });
             }
             transaction.delete(this.#firestoreDatabase.doc(`${this.room.id}/${this.id}`));
         });
@@ -182,7 +179,6 @@ export class RoomMember {
                 if (!infoDoc.exists) throw new Error('Room does not exist');
                 const memberDoc = this.#firestoreDatabase.collection(roomId).doc();
                 transaction.set(memberDoc, clientFields);
-                transaction.update(room.infoRef, { members: FieldValue.arrayUnion(memberDoc.id) });
                 memberId = memberDoc.id;
                 transaction.set(this.#firestoreDatabase.collection(`${roomId}/${memberId}/locations`).doc(), {
                     lat,
@@ -232,16 +228,22 @@ export class RoomMember {
             for (const { type, doc } of snap.docChanges()) {
                 const id = doc.id;
                 const data = doc.data();
-                if (id === this.id || id === 'info') continue;
+                if (id === this.id) continue;
+                if (id === 'info') {
+                    this.ws.send(JSON.stringify({
+                        type: 'roomUpdate',
+                        roomId: this.room.id,
+                        proposals: data.proposals
+                    }));
+                    continue;
+                }
                 switch (type) {
                     case 'added':
                         this.#otherMembersData.set(id, data);
                         this.ws.send(JSON.stringify({
                             type: 'memberUpdate',
                             userId: id,
-                            lost: data.lost,
-                            proposedLocation: data.proposedLocation,
-                            acceptedProposal: data.acceptedProposal
+                            lost: data.lost
                         }));
                         this.#locationUnsubscribes.set(id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locSnap => {
                             if (!locSnap.empty) {
@@ -252,13 +254,11 @@ export class RoomMember {
                         break;
                     case 'modified':
                         const oldData = this.#otherMembersData.get(id);
-                        if (oldData?.lost !== data.lost || oldData?.proposedLocation !== data.proposedLocation || oldData?.acceptedProposal !== data.acceptedProposal) {
+                        if (oldData?.lost !== data.lost) {
                             this.ws.send(JSON.stringify({
                                 type: 'memberUpdate',
                                 userId: id,
-                                lost: data.lost,
-                                proposedLocation: data.proposedLocation,
-                                acceptedProposal: data.acceptedProposal
+                                lost: data.lost
                             }));
                         }
                         this.#otherMembersData.set(id, data);
@@ -299,15 +299,6 @@ export class RoomMember {
      * @returns {Promise<void>}
      */
     async proposeLocation(geoPoint) {
-        if (!this.room || !this.id) throw new UserInRoomError();
-        if (!geoPoint || typeof geoPoint.latitude !== 'number' || typeof geoPoint.longitude !== 'number') {
-            throw new LatitudeRequiredError();
-        }
-        // Set the proposedLocation field in the member's document
-        await this.#firestoreDatabase.collection(this.room.id).doc(this.id).update({
-            proposedLocation: geoPoint
-        });
-        this.ws.send(JSON.stringify({ type: 'proposedLocation', userId: this.id, lat: geoPoint.latitude, lng: geoPoint.longitude }));
     }
 
     /**
@@ -316,12 +307,6 @@ export class RoomMember {
      * @returns {Promise<void>}
      */
     async acceptLocation(proposerId) {
-        if (!this.room || !this.id) throw new UserInRoomError();
-        if (!proposerId || proposerId === this.id) throw new Error('Invalid proposerId');
-        const memberRef = this.#firestoreDatabase.collection(this.room.id).doc(this.id);
-        // Remove previous acceptance if any
-        await memberRef.update({ acceptedProposal: proposerId });
-        this.ws.send(JSON.stringify({ type: 'acceptedLocation', userId: this.id, proposerId }));
     }
 
     /**
@@ -329,11 +314,6 @@ export class RoomMember {
      * @returns {Promise<void>}
      */
     async clearProposal() {
-        if (!this.room || !this.id) throw new UserInRoomError();
-        await this.#firestoreDatabase.collection(this.room.id).doc(this.id).update({
-            proposedLocation: FieldValue.delete()
-        });
-        this.ws.send(JSON.stringify({ type: 'clearedProposal', userId: this.id }));
     }
 
     checkAlive() {
