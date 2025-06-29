@@ -20,7 +20,7 @@ export class Room {
      * @param {number} lng
      * @returns {Promise<{ room: Room, memberId: string }>}
      */
-    static async create(firestore, memberFields, lat, lng) {
+    static async create(firestore, lat, lng) {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         let success = false, attempts = 0, infoDoc, roomId;
         let memberId;
@@ -39,7 +39,7 @@ export class Room {
                 members: [memberDoc.id]
             };
             transaction.set(infoDoc.ref, infoFields);
-            transaction.set(memberDoc, memberFields);
+            transaction.set(memberDoc, { joinedAt: FieldValue.serverTimestamp(), lost: false });
             memberId = memberDoc.id;
             transaction.set(firestore.collection(`${roomId}/${memberId}/locations`).doc(), {
                 lat,

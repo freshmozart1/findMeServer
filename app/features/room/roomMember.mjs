@@ -209,8 +209,7 @@ export class RoomMember {
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
         if (typeof lat !== 'number' || lat < -90 || lat > 90) throw new LatitudeError();
         if (typeof lng !== 'number' || lng < -180 || lng > 180) throw new LongitudeError();
-        const memberFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
-        const { room, memberId } = await Room.create(this.#firestoreDatabase, memberFields, lat, lng);
+        const { room, memberId } = await Room.create(this.#firestoreDatabase, lat, lng);
         this.room = room;
         this.id = memberId;
         this.roomUnsubscribe = this.#createRoomSnapshotListener();
