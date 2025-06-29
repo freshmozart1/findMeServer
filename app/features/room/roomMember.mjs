@@ -7,6 +7,7 @@ import {
     LatitudeRequiredError,
     LongitudeError,
     LongitudeRequiredError,
+    RoomIdRequiredError,
     UserInRoomError,
     WebSocketError
 } from '../server/errors.mjs';
@@ -170,6 +171,7 @@ export class RoomMember {
      */
     async joinRoom(roomId, lat, lng) {
         if (this.room) throw new UserInRoomError();
+        if (!roomId || roomId.trim() === '') throw new RoomIdRequiredError();
         if (lat === undefined || lat === null) throw new LatitudeRequiredError();
         if (lng === undefined || lng === null) throw new LongitudeRequiredError();
         if (typeof lat !== 'number' || lat < -90 || lat > 90) throw new LatitudeError();
