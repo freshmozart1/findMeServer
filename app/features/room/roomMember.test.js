@@ -1,6 +1,7 @@
 import { describe, expect } from "vitest";
 import { test } from "../server/serverTestUtils.mjs";
 import { GeoPoint, Timestamp } from "firebase-admin/firestore";
+import { UserInRoomError } from "../server/errors.mjs";
 
 describe('create room', () => {
     test('should create a room with correct data', async ({ roomOpener }) => {
@@ -93,6 +94,11 @@ describe('join room', () => {
             lng: joinerLocation.longitude,
             time: expect.any(Object)
         });
+    });
+
+    test('should throw an error if user is in a room', async ({ roomJoiner }) => {
+        await roomJoiner.createRoom(0, 0);
+        await expect(roomJoiner.joinRoom('some-room-id', 1, 1)).rejects.toThrow(UserInRoomError);
     });
 });
 
