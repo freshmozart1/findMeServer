@@ -2,7 +2,7 @@ function createErrorClass(name, message) {
     return class extends Error {
         constructor() {
             super(message);
-            this.name = name;
+            super.name = name;
         }
     };
 }
