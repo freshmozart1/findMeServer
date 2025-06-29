@@ -292,7 +292,19 @@ export class RoomMember {
      * @param {import('firebase-admin/firestore').GeoPoint} geoPoint
      * @returns {Promise<void>}
      */
-    async proposeLocation(geoPoint) {
+    async proposeMeetingPoint(geoPoint) {
+        return this.#firestoreDatabase.runTransaction(async t => {
+            if (!this.room || !this.id) throw new UserInRoomError();
+            if (!geoPoint || !(geoPoint instanceof Firestore.GeoPoint)) {
+                throw new Error('Invalid GeoPoint provided');
+            }
+            t.update(this.room.infoRef, {
+                [`proposals.${this.id}`]: {
+                    location: geoPoint,
+                    acceptedBy: []
+                }
+            })
+        });
     }
 
     /**
@@ -300,14 +312,44 @@ export class RoomMember {
      * @param {string} proposerId - The userId of the member whose proposal to accept
      * @returns {Promise<void>}
      */
-    async acceptLocation(proposerId) {
+    async acceptMeetingPoint(proposerId) {
+        return this.#firestoreDatabase.runTransaction(async t => {
+            if (!proposerId || typeof proposerId !== 'string') {
+                throw new Error('Invalid proposerId provided');
+            }
+            t.update(this.room.infoRef, {
+                [`proposals.${proposerId}.acceptedBy`]: FieldValue.arrayUnion(this.id)
+            });
+        });
+    }
+
+    /**
+     * Withdraws the acceptance of another member's proposed location.
+     * @param {string} proposerId - The userId of the member whose proposal to withdraw acceptance from
+     * @returns {Promise<void>}
+     * @memberof RoomMember
+     */
+    async revokeMeetingPointAcceptance(proposerId) {
+        return this.#firestoreDatabase.runTransaction(async t => {
+            if (!proposerId || typeof proposerId !== 'string') {
+                throw new Error('Invalid proposerId provided');
+            }
+            t.update(this.room.infoRef, {
+                [`proposals.${proposerId}.acceptedBy`]: FieldValue.arrayRemove(this.id)
+            });
+        });
     }
 
     /**
      * Clears the member's own proposed location.
      * @returns {Promise<void>}
      */
-    async clearProposal() {
+    async deleteProposedMeetingPoint() {
+        return this.#firestoreDatabase.runTransaction(async t => {
+            t.update(this.room.infoRef, {
+                [`proposals.${this.id}`]: FieldValue.delete()
+            });
+        });
     }
 
     #sendMemberUpdate(memberId, data) {

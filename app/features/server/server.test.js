@@ -1,6 +1,7 @@
 import { describe, expect } from "vitest";
 import { test } from "./serverTestUtils.mjs";
 import { GeoPoint, Timestamp } from "firebase-admin/firestore";
+import { time } from "console";
 
 describe('server.mjs', () => {
     test('Client should open a WebSocket connection', ({ websocketOpener }) => {
@@ -230,30 +231,124 @@ describe("RoomMember.mjs", () => {
         });
     });
 
-    test('should allow a member to propose a meeting location', async ({ roomOpener, database }) => {
-        // await roomOpener.createRoom(0, 0);
-        // const geoPoint = new GeoPoint(5, 10);
-        // await roomOpener.proposeLocation(geoPoint);
-        // const doc = await database.doc(`${roomOpener.getRoomId()}/${roomOpener.getId()}`).get();
-        // expect(doc.data().proposedLocation).toMatchObject({ latitude: 5, longitude: 10 });
+    test('should update info document if a member proposes a meeting point', async ({ roomOpener, database }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        const doc = await database.doc(`${roomOpener.getRoomId()}/info`).get();
+        expect(doc.data().proposals[roomOpener.getId()]).toMatchObject({
+            location: geoPoint,
+            acceptedBy: []
+        });
     });
 
-    test('should notify other members of a proposed location', async ({ roomOpener, roomJoiner }) => {
-        // await roomOpener.createRoom(0, 0);
-        // await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
-        // const geoPoint = new GeoPoint(5, 10);
-        // await roomOpener.proposeLocation(geoPoint);
-        // await expect.poll(() => {
-        //     console.log(roomJoiner.messages);
-        //     return roomJoiner.messages;
-        // }).toContainEqual({
-        //     type: 'memberUpdate',
-        //     userId: roomOpener.getId(),
-        //     lost: false,
-        //     proposedLocation: {
-        //         _latitude: 5,
-        //         _longitude: 10
-        //     }
-        // });
+    test('should notify other members if a member proposes a meeting point', async ({ roomOpener, roomJoiner }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        const expectedMessage = {
+            type: 'roomUpdate',
+            roomId: roomOpener.getRoomId(),
+            proposals: {
+                [roomOpener.getId()]: {
+                    location: geoPoint,
+                    acceptedBy: []
+                }
+            }
+        };
+        await expect.poll(() => roomJoiner.messages).toContainEqual(expectedMessage);
+        await expect.poll(() => roomOpener.messages).toContainEqual(expectedMessage);
+    });
+
+    test('should update info document if a member accepts a meeting point', async ({ roomOpener, roomJoiner, database }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        await roomJoiner.acceptMeetingPoint(roomOpener.getId());
+        const doc = await database.doc(`${roomOpener.getRoomId()}/info`).get();
+        expect(doc.data().proposals[roomOpener.getId()]).toMatchObject({
+            location: geoPoint,
+            acceptedBy: [roomJoiner.getId()]
+        });
+    });
+
+    test('should notify other members if a member accepts a meeting point', async ({ roomOpener, roomJoiner }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        await roomJoiner.acceptMeetingPoint(roomOpener.getId());
+        const expectedMessage = {
+            type: 'roomUpdate',
+            roomId: roomOpener.getRoomId(),
+            proposals: {
+                [roomOpener.getId()]: {
+                    location: geoPoint,
+                    acceptedBy: [roomJoiner.getId()]
+                }
+            }
+        };
+        await expect.poll(() => roomJoiner.messages).toContainEqual(expectedMessage);
+        await expect.poll(() => roomOpener.messages).toContainEqual(expectedMessage);
+    });
+
+    test('should delete proposed meeting point', async ({ roomOpener, database }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        await roomOpener.deleteProposedMeetingPoint();
+        const doc = await database.doc(`${roomOpener.getRoomId()}/info`).get();
+        expect(doc.data().proposals[roomOpener.getId()]).toBeUndefined();
+    });
+
+    test('should notify other members if a member deletes a proposed meeting point', async ({ roomOpener, roomJoiner }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        await roomOpener.deleteProposedMeetingPoint();
+        const expectedMessage = {
+            type: 'roomUpdate',
+            roomId: roomOpener.getRoomId(),
+            proposals: {
+                [roomOpener.getId()]: undefined
+            }
+        };
+        await expect.poll(() => roomJoiner.messages).toContainEqual(expectedMessage);
+        await expect.poll(() => roomOpener.messages).toContainEqual(expectedMessage);
+    });
+
+    test('should revoke acceptance of a proposed meeting point', async ({ roomOpener, roomJoiner, database }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        await roomJoiner.acceptMeetingPoint(roomOpener.getId());
+        await roomJoiner.revokeMeetingPointAcceptance(roomOpener.getId());
+        const doc = await database.doc(`${roomOpener.getRoomId()}/info`).get();
+        expect(doc.data().proposals[roomOpener.getId()]).toMatchObject({
+            location: geoPoint,
+            acceptedBy: []
+        });
+    });
+
+    test('should notify others if a member revokes meeting point acceptance', async ({ roomOpener, roomJoiner }) => {
+        await roomOpener.createRoom(0, 0);
+        const geoPoint = new GeoPoint(5, 10);
+        await roomOpener.proposeMeetingPoint(geoPoint);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        const expected = {
+            type: 'roomUpdate',
+            roomId: roomOpener.getRoomId(),
+            proposals: {
+                [roomOpener.getId()]: { location: geoPoint, acceptedBy: [] }
+            }
+        };
+        await expect.poll(() => roomJoiner.messages.pop()).toEqual(expected);
+        await roomJoiner.acceptMeetingPoint(roomOpener.getId());
+        await roomJoiner.revokeMeetingPointAcceptance(roomOpener.getId());
+        await expect.poll(() => roomJoiner.messages.pop()).toEqual(expected);
     });
 });

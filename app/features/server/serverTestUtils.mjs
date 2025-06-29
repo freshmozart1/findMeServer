@@ -36,7 +36,10 @@ async function createRoomMemberContext(database, use) {
         createRoom: (latitude, longitude) => roomMember.createRoom(latitude, longitude),
         joinRoom: (roomId, latitude, longitude) => roomMember.joinRoom(roomId, latitude, longitude),
         updateLocation: (latitude, longitude) => roomMember.updateLocation(latitude, longitude),
-        proposeLocation: (location) => roomMember.proposeLocation(location),
+        proposeMeetingPoint: (location) => roomMember.proposeMeetingPoint(location),
+        acceptMeetingPoint: (proposerId) => roomMember.acceptMeetingPoint(proposerId),
+        revokeMeetingPointAcceptance: (proposerId) => roomMember.revokeMeetingPointAcceptance(proposerId),
+        deleteProposedMeetingPoint: () => roomMember.deleteProposedMeetingPoint(),
         leaveRoom: () => {
             left = true;
             return roomMember.leaveRoom()
