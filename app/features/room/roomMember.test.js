@@ -26,6 +26,26 @@ describe('create room', () => {
 });
 
 describe('join room', () => {
+    test('should join a room with correct data', async ({ roomOpener, roomJoiner }) => {
+        await roomOpener.createRoom(0, 0);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        const joinerDoc = await roomJoiner.getDoc();
+        expect(joinerDoc.exists).toBe(true);
+        expect(joinerDoc.data()).toMatchObject({
+            lost: false,
+            joinedAt: expect.any(Object)
+        });
+        expect(roomJoiner.getRoomId()).toBe(roomOpener.getRoomId());
+        expect(roomJoiner.getId()).toBe(joinerDoc.id);
+        const locations = await roomJoiner.getLocations();
+        expect(locations.docs).toHaveLength(1);
+        expect(locations.docs.map(doc => doc.data())).toContainEqual({
+            lat: 1,
+            lng: 1,
+            time: expect.any(Object)
+        });
+    });
+
     test('should notify members when another member joins a room', async ({ roomOpener, roomJoiner }) => {
         const openerLocation = new GeoPoint(0, 0);
         await roomOpener.createRoom(openerLocation.latitude, openerLocation.longitude);
@@ -46,6 +66,32 @@ describe('join room', () => {
             userId: roomJoiner.getId(),
             joinedAt: expect.any(Object),
             lost: false
+        });
+    });
+
+    test('should send location of the room opener to the room joiner', async ({ roomOpener, roomJoiner }) => {
+        const openerLocation = new GeoPoint(0, 0);
+        await roomOpener.createRoom(openerLocation.latitude, openerLocation.longitude);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), 1, 1);
+        await expect.poll(() => roomJoiner.messages).toContainEqual({
+            type: 'location',
+            userId: roomOpener.getId(),
+            lat: openerLocation.latitude,
+            lng: openerLocation.longitude,
+            time: expect.any(Object)
+        });
+    });
+
+    test('should send location of the room joiner to the room opener', async ({ roomOpener, roomJoiner }) => {
+        const joinerLocation = new GeoPoint(1, 1);
+        await roomOpener.createRoom(0, 0);
+        await roomJoiner.joinRoom(roomOpener.getRoomId(), joinerLocation.latitude, joinerLocation.longitude);
+        await expect.poll(() => roomOpener.messages).toContainEqual({
+            type: 'location',
+            userId: roomJoiner.getId(),
+            lat: joinerLocation.latitude,
+            lng: joinerLocation.longitude,
+            time: expect.any(Object)
         });
     });
 });
