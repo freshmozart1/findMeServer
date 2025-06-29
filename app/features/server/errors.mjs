@@ -20,3 +20,5 @@ export const WebSocketError = createErrorClass('WebSocketError', 'WebSocket is r
 export const UserInRoomError = createErrorClass('UserInRoomError', 'User is already in a room');
 
 export const RoomIdRequiredError = createErrorClass('RoomIdRequiredError', 'Room ID is required');
+
+export const RoomInfoDoesNotExistError = createErrorClass('RoomInfoDoesNotExistError', 'Room info document does not exist');
