@@ -2,8 +2,7 @@ import { describe, expect } from "vitest";
 import { test } from "../server/serverTestUtils.mjs";
 import { GeoPoint, Timestamp } from "firebase-admin/firestore";
 
-describe("RoomMember.mjs", () => {
-
+describe('create room', () => {
     test('should create a room with correct data', async ({ roomOpener }) => {
         const location = new GeoPoint(0, 0);
         await roomOpener.createRoom(location.latitude, location.longitude);
@@ -24,29 +23,9 @@ describe("RoomMember.mjs", () => {
             time: expect.any(Object)
         });
     });
+});
 
-    test('should remove a member from a room', async ({ roomOpener, database }) => {
-        await roomOpener.createRoom(0, 0);
-        let openerDoc = await roomOpener.getDoc();
-        const roomId = roomOpener.getRoomId();
-        await roomOpener.leaveRoom();
-        await expect.poll(() => roomOpener.messages).toContainEqual({ type: 'left', userId: openerDoc.id });
-        openerDoc = await database.doc(`${roomId}/${openerDoc.id}`).get();
-        expect(openerDoc.exists).toBe(false);
-    });
-
-    test('Remove member from room after 30s of inactivity', { timeout: 34000 }, async ({ roomOpener, database }) => {
-        await roomOpener.createRoom(0, 0);
-        const roomId = roomOpener.getRoomId();
-        const id = roomOpener.id;
-        await expect.poll(() => roomOpener.messages, { timeout: 32000, interval: 500 }).toContainEqual({
-            type: 'left',
-            userId: roomOpener.getId()
-        });
-        const openerDoc = await database.doc(`${roomId}/${id}`).get();
-        expect(openerDoc.exists).toBe(false);
-    });
-
+describe('join room', () => {
     test('should notify members when another member joins a room', async ({ roomOpener, roomJoiner }) => {
         const openerLocation = new GeoPoint(0, 0);
         await roomOpener.createRoom(openerLocation.latitude, openerLocation.longitude);
@@ -69,6 +48,30 @@ describe("RoomMember.mjs", () => {
             lost: false
         });
     });
+});
+
+describe('Remove room member', () => {
+    test('should remove a member from a room', async ({ roomOpener, database }) => {
+        await roomOpener.createRoom(0, 0);
+        let openerDoc = await roomOpener.getDoc();
+        const roomId = roomOpener.getRoomId();
+        await roomOpener.leaveRoom();
+        await expect.poll(() => roomOpener.messages).toContainEqual({ type: 'left', userId: openerDoc.id });
+        openerDoc = await database.doc(`${roomId}/${openerDoc.id}`).get();
+        expect(openerDoc.exists).toBe(false);
+    });
+
+    test('Remove member from room after 30s of inactivity', { timeout: 34000 }, async ({ roomOpener, database }) => {
+        await roomOpener.createRoom(0, 0);
+        const roomId = roomOpener.getRoomId();
+        const id = roomOpener.id;
+        await expect.poll(() => roomOpener.messages, { timeout: 32000, interval: 500 }).toContainEqual({
+            type: 'left',
+            userId: roomOpener.getId()
+        });
+        const openerDoc = await database.doc(`${roomId}/${id}`).get();
+        expect(openerDoc.exists).toBe(false);
+    });
 
     test('should remove a second member from a room', async ({ roomJoiner, roomOpener, database }) => {
         await roomOpener.createRoom(0, 0);
@@ -82,7 +85,9 @@ describe("RoomMember.mjs", () => {
         await expect.poll(() => roomOpener.messages).toContainEqual({ type: 'left', userId: joinerDoc.id });
         expect((await database.doc(`${roomId}/${joinerDoc.id}`).get()).exists).toBeFalsy();
     });
+});
 
+describe("location", () => {
     test('should update location of a member in a room', async ({ roomOpener }) => {
         await roomOpener.createRoom(0, 0);
         const location = new GeoPoint(1, 1);
@@ -118,7 +123,9 @@ describe("RoomMember.mjs", () => {
             time: expect.any(Object)
         });
     });
+});
 
+describe('meeting point', () => {
     test('should update info document if a member proposes a meeting point', async ({ roomOpener, database }) => {
         await roomOpener.createRoom(0, 0);
         const geoPoint = new GeoPoint(5, 10);
