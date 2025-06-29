@@ -238,11 +238,7 @@ export class RoomMember {
                 switch (type) {
                     case 'added':
                         this.#otherMembersData.set(id, data);
-                        this.ws.send(JSON.stringify({
-                            type: 'memberUpdate',
-                            userId: id,
-                            lost: data.lost
-                        }));
+                        this.#sendMemberUpdate(id, data);
                         this.#locationUnsubscribes.set(id, doc.ref.collection('locations').orderBy('time', 'desc').limit(1).onSnapshot(locSnap => {
                             if (!locSnap.empty) {
                                 const { lat, lng, time } = locSnap.docs[0].data();
@@ -253,11 +249,7 @@ export class RoomMember {
                     case 'modified':
                         const oldData = this.#otherMembersData.get(id);
                         if (oldData?.lost !== data.lost) {
-                            this.ws.send(JSON.stringify({
-                                type: 'memberUpdate',
-                                userId: id,
-                                lost: data.lost
-                            }));
+                            this.#sendMemberUpdate(id, data);
                         }
                         this.#otherMembersData.set(id, data);
                         break;
@@ -312,6 +304,14 @@ export class RoomMember {
      * @returns {Promise<void>}
      */
     async clearProposal() {
+    }
+
+    #sendMemberUpdate(memberId, data) {
+        this.ws.send(JSON.stringify({
+            type: 'memberUpdate',
+            userId: memberId,
+            ...data
+        }));
     }
 
     checkAlive() {

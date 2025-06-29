@@ -175,15 +175,20 @@ describe("RoomMember.mjs", () => {
         await roomJoiner.joinRoom(roomId, 1, 1);
         expect(roomJoiner.getRoomId()).toBe(roomId);
 
-        await expect.poll(() => roomJoiner.messages).toContainEqual({
+        await expect.poll(() => {
+            console.log(roomJoiner.messages);
+            return roomJoiner.messages;
+        }).toContainEqual({
             type: 'memberUpdate',
             userId: roomOpener.getId(),
+            joinedAt: expect.any(Object),
             lost: false
         });
 
         await expect.poll(() => roomOpener.messages).toContainEqual({
             type: 'memberUpdate',
             userId: roomJoiner.getId(),
+            joinedAt: expect.any(Object),
             lost: false
         });
     });
