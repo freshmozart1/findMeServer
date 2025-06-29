@@ -18,3 +18,5 @@ export const LongitudeError = createErrorClass('LongitudeError', 'Longitude is i
 export const WebSocketError = createErrorClass('WebSocketError', 'WebSocket is required');
 
 export const UserInRoomError = createErrorClass('UserInRoomError', 'User is already in a room');
+
+export const RoomIdRequiredError = createErrorClass('RoomIdRequiredError', 'Room ID is required');
