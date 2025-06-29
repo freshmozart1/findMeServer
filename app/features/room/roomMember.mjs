@@ -8,6 +8,7 @@ import {
     LongitudeError,
     LongitudeRequiredError,
     RoomIdRequiredError,
+    RoomInfoDoesNotExistError,
     UserInRoomError,
     WebSocketError
 } from '../server/errors.mjs';
@@ -180,7 +181,7 @@ export class RoomMember {
         const clientFields = { joinedAt: FieldValue.serverTimestamp(), lost: false };
         await this.#firestoreDatabase.runTransaction(async transaction => {
             const infoDoc = await transaction.get(room.infoRef);
-            if (!infoDoc.exists) throw new Error('Room does not exist');
+            if (!infoDoc.exists) throw new RoomInfoDoesNotExistError();
             const memberDoc = room.collection.doc();
             transaction.set(memberDoc, clientFields);
             this.id = memberDoc.id;
